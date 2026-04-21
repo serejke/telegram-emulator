@@ -247,6 +247,16 @@ function setWebhook(
     // Empty URL removes the webhook, matching real behaviour.
     return deleteWebhook(c, bot, store);
   }
+  // Real Telegram only allows HTTPS webhooks (and rejects localhost, though
+  // the emulator is lenient there for hermetic testing).
+  if (!/^https:\/\//i.test(url)) {
+    return tgError(
+      c,
+      "Bad Request: bad webhook: HTTPS url must be provided for webhook",
+      400,
+      400,
+    );
+  }
 
   const ts = getTelegramStore(store);
   ts.bots.update(bot.id, {
@@ -305,6 +315,15 @@ function sendMessage(
 
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);
   if (threadErr) return tgError(c, threadErr, 400);
+
+  if (replyTo !== undefined) {
+    const target = ts.messages
+      .findBy("chat_id", chatId)
+      .find((m) => m.message_id === replyTo && !m.deleted);
+    if (!target) {
+      return tgError(c, "Bad Request: message to be replied not found", 400, 400);
+    }
+  }
 
   const messageId = chat.next_message_id;
   ts.chats.update(chat.id, { next_message_id: messageId + 1 });
@@ -367,9 +386,12 @@ function applyParseMode(
       return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
     }
     if (mode === "Markdown") {
-      // Legacy Markdown — not supported. Real Telegram still accepts it,
-      // but for test purposes we surface the intent to migrate.
-      return { ok: false, description: "Bad Request: legacy Markdown parse_mode is not supported by this emulator; use MarkdownV2 or HTML" };
+      // Legacy Markdown v1: simpler grammar than V2 (no spoiler/underline/
+      // strikethrough, `_` and `*` only, no escape syntax). Real Telegram
+      // still accepts it; many older SDKs default to it.
+      const { text, entities } = parseLegacyMarkdown(rawText);
+      const merged = mergeEntities(entities, callerEntities);
+      return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
     }
     return { ok: false, description: `Bad Request: unknown parse_mode '${mode}'` };
   } catch (err) {
@@ -385,9 +407,73 @@ function mergeEntities(
   caller: MessageEntity[] | undefined,
 ): MessageEntity[] {
   if (!caller || caller.length === 0) return parsed;
-  const all = [...parsed, ...caller];
+  // When caller supplies entities explicitly, real Telegram discards
+  // parse_mode output — drop the parsed side.
+  const all = [...caller];
   all.sort((a, b) => (a.offset !== b.offset ? a.offset - b.offset : b.length - a.length));
   return all;
+}
+
+// Minimal legacy Markdown (v1) parser: *bold*, _italic_, `code`,
+// ```pre```, [text](url). No escape syntax; unmatched markers are
+// emitted as literal text.
+function parseLegacyMarkdown(input: string): { text: string; entities: MessageEntity[] } {
+  const out: string[] = [];
+  const entities: MessageEntity[] = [];
+  let i = 0;
+  const emit = (
+    type: MessageEntity["type"],
+    markerLen: number,
+    closer: string,
+    extras?: Partial<MessageEntity>,
+  ): boolean => {
+    const close = input.indexOf(closer, i + markerLen);
+    if (close === -1) return false;
+    const body = input.slice(i + markerLen, close);
+    const start = out.join("").length;
+    out.push(body);
+    entities.push({ type, offset: start, length: body.length, ...extras });
+    i = close + closer.length;
+    return true;
+  };
+  while (i < input.length) {
+    const ch = input[i];
+    if (input.startsWith("```", i) && emit("pre", 3, "```")) continue;
+    if (ch === "`" && emit("code", 1, "`")) continue;
+    if (ch === "*" && emit("bold", 1, "*")) continue;
+    if (ch === "_" && emit("italic", 1, "_")) continue;
+    if (ch === "[") {
+      const close = input.indexOf("]", i + 1);
+      if (close !== -1 && input[close + 1] === "(") {
+        const urlClose = input.indexOf(")", close + 2);
+        if (urlClose !== -1) {
+          const text = input.slice(i + 1, close);
+          const url = input.slice(close + 2, urlClose);
+          const start = out.join("").length;
+          out.push(text);
+          if (url.startsWith("tg://user?id=")) {
+            const uid = Number(url.slice("tg://user?id=".length));
+            if (Number.isFinite(uid)) {
+              entities.push({
+                type: "text_mention",
+                offset: start,
+                length: text.length,
+                user: { id: uid, is_bot: false, first_name: "" },
+              });
+            }
+          } else {
+            entities.push({ type: "text_link", offset: start, length: text.length, url });
+          }
+          i = urlClose + 1;
+          continue;
+        }
+      }
+    }
+    out.push(ch);
+    i += 1;
+  }
+  entities.sort((a, b) => (a.offset !== b.offset ? a.offset - b.offset : b.length - a.length));
+  return { text: out.join(""), entities };
 }
 
 async function sendPhoto(
@@ -990,15 +1076,18 @@ async function sendMediaMessage(
   let captionEntities = callerCaptionEntities;
   if (rawCaption !== undefined) {
     if (kind === "sticker") {
-      return tgError(c, "Bad Request: sticker messages don't accept a caption", 400, 400);
+      // Real Telegram silently ignores captions on stickers.
+      caption = undefined;
+      captionEntities = undefined;
+    } else {
+      const parsed = applyParseMode(rawCaption, body.parse_mode, callerCaptionEntities);
+      if (!parsed.ok) return tgError(c, parsed.description, 400);
+      if (parsed.text.length > CAPTION_LIMIT) {
+        return tgError(c, "Bad Request: message caption is too long", 400, 400);
+      }
+      caption = parsed.text;
+      captionEntities = parsed.entities;
     }
-    const parsed = applyParseMode(rawCaption, body.parse_mode, callerCaptionEntities);
-    if (!parsed.ok) return tgError(c, parsed.description, 400);
-    if (parsed.text.length > CAPTION_LIMIT) {
-      return tgError(c, "Bad Request: message caption is too long", 400, 400);
-    }
-    caption = parsed.text;
-    captionEntities = parsed.entities;
   }
 
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);

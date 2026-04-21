@@ -30,7 +30,7 @@ describe("Telegram webhook delivery", () => {
     const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
 
     await postJson(tx.app, `/bot${bot.token}/setWebhook`, {
-      url: "http://example.com/webhook",
+      url: "https://example.com/webhook",
       secret_token: "sekret",
     });
 
@@ -40,7 +40,7 @@ describe("Telegram webhook delivery", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(received).toHaveLength(1);
-    expect(received[0].url).toBe("http://example.com/webhook");
+    expect(received[0].url).toBe("https://example.com/webhook");
     expect(received[0].headers["x-telegram-bot-api-secret-token"]).toBe("sekret");
     const body = received[0].body as { update_id: number; message: { text: string } };
     expect(body.update_id).toBe(1);
@@ -60,7 +60,7 @@ describe("Telegram webhook delivery", () => {
     const bot = createBot(tx.store, { username: "b" });
     const user = createUser(tx.store, { first_name: "A" });
     const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
-    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "http://example.com/webhook" });
+    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "https://example.com/webhook" });
 
     simulateUserMessage(tx.store, { chatId: dm.chat_id, userId: user.user_id, text: "retry-me" });
     await new Promise((r) => setTimeout(r, 20));
@@ -82,7 +82,7 @@ describe("Telegram webhook delivery", () => {
     const bot = createBot(tx.store, { username: "b" });
     const user = createUser(tx.store, { first_name: "A" });
     const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
-    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "http://example.com/webhook" });
+    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "https://example.com/webhook" });
 
     simulateUserMessage(tx.store, { chatId: dm.chat_id, userId: user.user_id, text: "nope" });
     await new Promise((r) => setTimeout(r, 20));
@@ -95,7 +95,7 @@ describe("Telegram webhook delivery", () => {
 
   it("deleteWebhook reverts bot to long-polling mode", async () => {
     const bot = createBot(tx.store, { username: "b" });
-    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "http://example.com/webhook" });
+    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "https://example.com/webhook" });
     await postJson(tx.app, `/bot${bot.token}/deleteWebhook`, {});
 
     // Now getUpdates should work (not 409)

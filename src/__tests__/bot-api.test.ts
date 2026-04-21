@@ -125,10 +125,49 @@ describe("Telegram Bot API - getUpdates (long polling)", () => {
   it("rejects getUpdates while webhook is active (409)", async () => {
     const bot = createBot(tx.store, { username: "b" });
     // Activate webhook
-    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "http://example.com/webhook" });
+    await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "https://example.com/webhook" });
 
     const res = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
     expect(res.status).toBe(409);
+  });
+
+  it("setWebhook rejects non-HTTPS URLs with 400", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const res = await postJson(tx.app, `/bot${bot.token}/setWebhook`, {
+      url: "http://example.com/webhook",
+    });
+    expect(res.status).toBe(400);
+    const body = await json<{ description: string }>(res);
+    expect(body.description).toMatch(/HTTPS/);
+  });
+
+  it("sendMessage rejects reply_to_message_id pointing at a non-existent message", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const user = createUser(tx.store, { first_name: "A" });
+    const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
+    const res = await postJson(tx.app, `/bot${bot.token}/sendMessage`, {
+      chat_id: dm.chat_id,
+      text: "reply to ghost",
+      reply_to_message_id: 9999,
+    });
+    expect(res.status).toBe(400);
+    const body = await json<{ description: string }>(res);
+    expect(body.description).toMatch(/replied not found/);
+  });
+
+  it("accepts legacy parse_mode=Markdown", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const user = createUser(tx.store, { first_name: "A" });
+    const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
+    const res = await postJson(tx.app, `/bot${bot.token}/sendMessage`, {
+      chat_id: dm.chat_id,
+      text: "*bold* and _italic_",
+      parse_mode: "Markdown",
+    });
+    expect(res.status).toBe(200);
+    const body = await json<{ result: { text: string; entities: Array<{ type: string }> } }>(res);
+    expect(body.result.text).toBe("bold and italic");
+    expect(body.result.entities.map((e) => e.type).sort()).toEqual(["bold", "italic"]);
   });
 
   it("setWebhook / deleteWebhook / setMyCommands return bare true", async () => {

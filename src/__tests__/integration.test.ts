@@ -379,7 +379,7 @@ describe("Integration — rich media", () => {
     });
   }
 
-  it("sticker rejects caption", async () => {
+  it("sticker silently strips caption (matches real Telegram)", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const user = createUser(tx.store, { first_name: "A" });
     const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
@@ -401,7 +401,9 @@ describe("Integration — rich media", () => {
       sticker: "stk",
       caption: "nope",
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const body = await json<{ result: { caption?: string } }>(res);
+    expect(body.result.caption).toBeUndefined();
   });
 
   it("simulateUserMedia produces a user message with the media field and file_id", async () => {
