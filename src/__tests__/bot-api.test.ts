@@ -131,6 +131,26 @@ describe("Telegram Bot API - getUpdates (long polling)", () => {
     expect(res.status).toBe(409);
   });
 
+  it("setWebhook / deleteWebhook / setMyCommands return bare true", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const set = await json<{ ok: boolean; result: unknown }>(
+      await postJson(tx.app, `/bot${bot.token}/setWebhook`, { url: "https://example.com/webhook" }),
+    );
+    expect(set.result).toBe(true);
+
+    const del = await json<{ ok: boolean; result: unknown }>(
+      await postJson(tx.app, `/bot${bot.token}/deleteWebhook`, {}),
+    );
+    expect(del.result).toBe(true);
+
+    const cmd = await json<{ ok: boolean; result: unknown }>(
+      await postJson(tx.app, `/bot${bot.token}/setMyCommands`, {
+        commands: [{ command: "start", description: "Start" }],
+      }),
+    );
+    expect(cmd.result).toBe(true);
+  });
+
   it("rejects concurrent getUpdates for the same bot (409)", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const first = postJson(tx.app, `/bot${bot.token}/getUpdates`, { timeout: 1 });

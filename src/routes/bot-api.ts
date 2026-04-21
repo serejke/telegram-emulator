@@ -253,13 +253,13 @@ function setWebhook(
     webhook_secret: secret,
     webhook_allowed_updates: allowed,
   });
-  return ok(c, { webhook_set: true } as unknown as Record<string, unknown>);
+  return okRaw(c, true);
 }
 
 function deleteWebhook(c: Context, bot: TelegramBot, store: import("@emulators/core").Store) {
   const ts = getTelegramStore(store);
   ts.bots.update(bot.id, { webhook_url: null, webhook_secret: null, webhook_allowed_updates: null });
-  return ok(c, { webhook_deleted: true } as unknown as Record<string, unknown>);
+  return okRaw(c, true);
 }
 
 function getWebhookInfo(c: Context, bot: TelegramBot) {
@@ -844,7 +844,7 @@ function setMyCommands(
   const commands = Array.isArray(body.commands) ? (body.commands as Array<{ command: string; description: string }>) : [];
   const ts = getTelegramStore(store);
   ts.bots.update(bot.id, { commands });
-  return ok(c, { commands_set: true } as unknown as Record<string, unknown>);
+  return okRaw(c, true);
 }
 
 function getMyCommands(c: Context, bot: TelegramBot) {
