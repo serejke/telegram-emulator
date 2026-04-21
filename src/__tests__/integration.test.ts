@@ -660,6 +660,51 @@ describe("Integration — small methods", () => {
     expect(body.result).toBe(true);
   });
 
+  it("getChatMember reports creator / administrator / member", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const alice = createUser(tx.store, { first_name: "A" });
+    const bob = createUser(tx.store, { first_name: "B" });
+    const carol = createUser(tx.store, { first_name: "C" });
+    const group = createGroupChat(tx.store, {
+      title: "G",
+      memberIds: [alice.user_id, bob.user_id, carol.user_id],
+      botIds: [bot.bot_id],
+      creatorUserId: alice.user_id,
+      adminUserIds: [bob.user_id],
+    });
+
+    const call = async (uid: number) =>
+      json<{ result: { status: string; can_manage_chat?: boolean } }>(
+        await postJson(tx.app, `/bot${bot.token}/getChatMember`, { chat_id: group.chat_id, user_id: uid }),
+      );
+
+    expect((await call(alice.user_id)).result.status).toBe("creator");
+    expect((await call(bob.user_id)).result.status).toBe("administrator");
+    expect((await call(carol.user_id)).result.status).toBe("member");
+    expect((await call(alice.user_id)).result.can_manage_chat).toBe(true);
+  });
+
+  it("getChatAdministrators returns creator + admins", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const alice = createUser(tx.store, { first_name: "A" });
+    const bob = createUser(tx.store, { first_name: "B" });
+    const group = createGroupChat(tx.store, {
+      title: "G",
+      memberIds: [alice.user_id, bob.user_id],
+      botIds: [bot.bot_id],
+      creatorUserId: alice.user_id,
+      adminUserIds: [bob.user_id],
+    });
+    const body = await json<{ result: Array<{ status: string; user: { id: number } }> }>(
+      await postJson(tx.app, `/bot${bot.token}/getChatAdministrators`, { chat_id: group.chat_id }),
+    );
+    expect(body.result).toHaveLength(2);
+    expect(body.result[0].status).toBe("creator");
+    expect(body.result[0].user.id).toBe(alice.user_id);
+    expect(body.result[1].status).toBe("administrator");
+    expect(body.result[1].user.id).toBe(bob.user_id);
+  });
+
   it("getChat returns ChatFullInfo shape with permissions + accent_color_id", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const u1 = createUser(tx.store, { first_name: "A" });

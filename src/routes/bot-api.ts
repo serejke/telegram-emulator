@@ -6,6 +6,7 @@ import {
   generateCallbackQueryId,
   nextFileId,
   ok,
+  okRaw,
   parseEntities,
   parseTelegramBody,
   resolveBotFromToken,
@@ -98,6 +99,8 @@ export function botApiRoutes(ctx: RouteContext): void {
         return getChat(c, body, store);
       case "getChatMember":
         return getChatMember(c, body, store);
+      case "getChatAdministrators":
+        return getChatAdministrators(c, body, store);
       case "setMyCommands":
         return setMyCommands(c, bot, body, store);
       case "getMyCommands":
@@ -607,6 +610,40 @@ function getChat(
   return ok(c, serializeChatFullInfo(chat, { store }));
 }
 
+function chatMemberStatus(chat: TelegramChat, subjectId: number, isBot: boolean): "creator" | "administrator" | "member" | "left" {
+  if (isBot) {
+    if (!chat.member_bot_ids.includes(subjectId)) return "left";
+    if ((chat.admin_bot_ids ?? []).includes(subjectId)) return "administrator";
+    // Bots in their own private chat effectively behave as admins.
+    if (chat.type === "private") return "administrator";
+    return "member";
+  }
+  if (!chat.member_user_ids.includes(subjectId)) return "left";
+  if (chat.creator_user_id === subjectId) return "creator";
+  if ((chat.admin_user_ids ?? []).includes(subjectId)) return "administrator";
+  return "member";
+}
+
+function adminMemberExtras(status: "creator" | "administrator" | "member" | "left", chat: TelegramChat): Record<string, unknown> {
+  if (status !== "creator" && status !== "administrator") return {};
+  const isForum = chat.type === "supergroup" && chat.is_forum === true;
+  return {
+    can_be_edited: status === "administrator",
+    is_anonymous: false,
+    can_manage_chat: true,
+    can_delete_messages: true,
+    can_manage_video_chats: true,
+    can_restrict_members: status === "creator",
+    can_promote_members: status === "creator",
+    can_change_info: true,
+    can_invite_users: true,
+    can_post_messages: chat.type === "channel" ? true : undefined,
+    can_edit_messages: chat.type === "channel" ? true : undefined,
+    can_pin_messages: chat.type !== "channel" ? true : undefined,
+    can_manage_topics: isForum ? true : undefined,
+  };
+}
+
 function getChatMember(
   c: Context,
   body: Record<string, unknown>,
@@ -621,17 +658,61 @@ function getChatMember(
 
   const user = ts.users.findOneBy("user_id", userId);
   const bot = ts.bots.findOneBy("bot_id", userId);
-  const memberUser = chat.member_user_ids.includes(userId) ? user : undefined;
-  const memberBot = chat.member_bot_ids.includes(userId) ? bot : undefined;
+  const isBotSubject = !!bot && !user;
+  const knownMember =
+    (user && chat.member_user_ids.includes(userId)) || (bot && chat.member_bot_ids.includes(userId));
 
-  if (!memberUser && !memberBot) {
-    return tgError(c, "Bad Request: user not found in chat");
+  if (!user && !bot) return tgError(c, "Bad Request: user not found");
+  if (!knownMember) return tgError(c, "Bad Request: user not found in chat");
+
+  const status = chatMemberStatus(chat, userId, isBotSubject);
+  const userField = user ? serializeUser(user) : bot ? serializeBotAsUser(bot) : undefined;
+  const extras = adminMemberExtras(status, chat);
+  const out: Record<string, unknown> = { status, user: userField };
+  for (const [k, v] of Object.entries(extras)) {
+    if (v !== undefined) out[k] = v;
   }
+  return ok(c, out);
+}
 
-  return ok(c, {
-    status: "member",
-    user: memberUser ? serializeUser(memberUser) : memberBot ? serializeBotAsUser(memberBot) : undefined,
-  });
+function getChatAdministrators(
+  c: Context,
+  body: Record<string, unknown>,
+  store: import("@emulators/core").Store,
+) {
+  const chatId = coerceChatId(body.chat_id);
+  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", chatId);
+  if (!chat) return tgError(c, "Bad Request: chat not found");
+
+  const admins: Record<string, unknown>[] = [];
+  const push = (
+    status: "creator" | "administrator",
+    subject: Record<string, unknown>,
+  ) => {
+    const base: Record<string, unknown> = { status, user: subject };
+    const extras = adminMemberExtras(status, chat);
+    for (const [k, v] of Object.entries(extras)) {
+      if (v !== undefined) base[k] = v;
+    }
+    admins.push(base);
+  };
+
+  if (chat.creator_user_id !== undefined) {
+    const u = ts.users.findOneBy("user_id", chat.creator_user_id);
+    if (u) push("creator", serializeUser(u));
+  }
+  for (const uid of chat.admin_user_ids ?? []) {
+    if (uid === chat.creator_user_id) continue;
+    const u = ts.users.findOneBy("user_id", uid);
+    if (u) push("administrator", serializeUser(u));
+  }
+  for (const bid of chat.admin_bot_ids ?? []) {
+    const b = ts.bots.findOneBy("bot_id", bid);
+    if (b) push("administrator", serializeBotAsUser(b));
+  }
+  return okRaw(c, admins);
 }
 
 function setMyCommands(

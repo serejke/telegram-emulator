@@ -113,6 +113,13 @@ export interface TelegramTestClient {
   addBotToChat(input: { chatId: number; botId: number; byUserId: number }): Promise<{ update_id: number }>;
   removeBotFromChat(input: { chatId: number; botId: number; byUserId: number }): Promise<{ update_id: number }>;
 
+  promoteChatMember(input: {
+    chatId: number;
+    userId?: number;
+    botId?: number;
+    demote?: boolean;
+  }): Promise<void>;
+
   reactToMessage(input: {
     chatId: number;
     messageId: number;
@@ -303,6 +310,14 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
         byUserId: input.byUserId,
       });
       return { update_id: r.update_id as number };
+    },
+
+    async promoteChatMember(input) {
+      await postJson(root, `/_emu/telegram/chats/${input.chatId}/promote`, {
+        userId: input.userId,
+        botId: input.botId,
+        demote: input.demote,
+      });
     },
 
     async reactToMessage(input) {

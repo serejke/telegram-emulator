@@ -57,6 +57,9 @@ export interface CreateGroupChatInput {
   type?: "group" | "supergroup";
   memberIds: number[];
   botIds: number[];
+  creatorUserId?: number;
+  adminUserIds?: number[];
+  adminBotIds?: number[];
 }
 
 export function createBot(store: Store, input: CreateBotInput): TelegramBot {
@@ -131,14 +134,47 @@ export function createPrivateChat(store: Store, input: CreatePrivateChatInput): 
 export function createGroupChat(store: Store, input: CreateGroupChatInput): TelegramChat {
   const ts = getTelegramStore(store);
   const chatId = input.type === "supergroup" ? nextSupergroupChatId(store) : nextGroupChatId(store);
+  // Creator defaults to the first member if not specified; real Telegram
+  // always has a creator, so getChatAdministrators never returns empty.
+  const creatorUserId = input.creatorUserId ?? input.memberIds[0];
   return ts.chats.insert({
     chat_id: chatId,
     type: input.type ?? "group",
     title: input.title,
     member_user_ids: [...input.memberIds],
     member_bot_ids: [...input.botIds],
+    creator_user_id: creatorUserId,
+    admin_user_ids: input.adminUserIds ? [...input.adminUserIds] : undefined,
+    admin_bot_ids: input.adminBotIds ? [...input.adminBotIds] : undefined,
     next_message_id: 1,
   });
+}
+
+export interface PromoteChatMemberInput {
+  chatId: number;
+  userId?: number;
+  botId?: number;
+  demote?: boolean;
+}
+
+export function promoteChatMember(store: Store, input: PromoteChatMemberInput): TelegramChat {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const updates: Partial<TelegramChat> = {};
+  if (input.userId !== undefined) {
+    const admins = new Set(chat.admin_user_ids ?? []);
+    if (input.demote) admins.delete(input.userId);
+    else admins.add(input.userId);
+    updates.admin_user_ids = Array.from(admins);
+  }
+  if (input.botId !== undefined) {
+    const admins = new Set(chat.admin_bot_ids ?? []);
+    if (input.demote) admins.delete(input.botId);
+    else admins.add(input.botId);
+    updates.admin_bot_ids = Array.from(admins);
+  }
+  return ts.chats.update(chat.id, updates) ?? chat;
 }
 
 export interface CreateSupergroupInput {
@@ -885,6 +921,18 @@ export function controlRoutes(ctx: RouteContext): void {
   app.post("/_emu/telegram/chats/group", async (c) => {
     const body = await parseTelegramBody(c);
     const chat = createGroupChat(store, body as unknown as CreateGroupChatInput);
+    return c.json({ ok: true, chat: serializeChat(chat) });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/promote", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const chat = promoteChatMember(store, {
+      chatId,
+      userId: body.userId as number | undefined,
+      botId: body.botId as number | undefined,
+      demote: body.demote === true,
+    });
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 

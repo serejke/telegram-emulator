@@ -120,6 +120,9 @@ export interface TelegramChat extends Entity {
   last_name?: string;
   member_user_ids: number[];
   member_bot_ids: number[];
+  creator_user_id?: number;
+  admin_user_ids?: number[];
+  admin_bot_ids?: number[];
   next_message_id: number;
   // ChatFullInfo extras — defaulted, mutable via control plane.
   bio?: string;
