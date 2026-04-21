@@ -9,8 +9,8 @@ import { telegramPaths } from "./paths.js";
  *   const tg = createTelegramTestClient(emu.url);
  *   const bot = await tg.createBot({ username: "trip_test_bot" });
  *   const user = await tg.createUser({ first_name: "Alice" });
- *   const dm = await tg.createPrivateChat({ botId: bot.bot_id, userId: user.user_id });
- *   await tg.sendUserMessage({ chatId: dm.id, userId: user.user_id, text: "/connect ABC" });
+ *   const dm = await tg.createPrivateChat({ botId: bot.bot_id, userId: user.id });
+ *   await tg.sendUserMessage({ chatId: dm.id, userId: user.id, text: "/connect ABC" });
  */
 
 export interface TestBot {
