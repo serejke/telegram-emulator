@@ -24,6 +24,7 @@ interface LongPollWaiter {
 
 export class TelegramDispatcher {
   private waiters: LongPollWaiter[] = [];
+  private activePolls = new Set<number>();
   private retryPolicy: RetryPolicy = DEFAULT_RETRY;
   private fetchImpl: typeof fetch = fetch;
   private backoffEnabled = true;
@@ -165,22 +166,34 @@ export class TelegramDispatcher {
     }
   }
 
+  isPolling(botId: number): boolean {
+    return this.activePolls.has(botId);
+  }
+
   getUpdates(botId: number, offset?: number, limit = 100, timeoutSec = 0): Promise<TelegramUpdate[]> {
+    this.activePolls.add(botId);
+    const release = () => this.activePolls.delete(botId);
+
     const ready = this.drain(botId, offset, limit);
     if (ready.length > 0 || timeoutSec === 0) {
+      release();
       return Promise.resolve(ready);
     }
     return new Promise<TelegramUpdate[]>((resolve) => {
       const waiter: LongPollWaiter = {
         botId,
         offset: offset ?? 0,
-        resolve: (updates) => resolve(updates.slice(0, limit)),
+        resolve: (updates) => {
+          release();
+          resolve(updates.slice(0, limit));
+        },
       };
       this.waiters.push(waiter);
       const timer = setTimeout(() => {
         const idx = this.waiters.indexOf(waiter);
         if (idx >= 0) {
           this.waiters.splice(idx, 1);
+          release();
           resolve(this.drain(botId, offset, limit));
         }
       }, timeoutSec * 1000);

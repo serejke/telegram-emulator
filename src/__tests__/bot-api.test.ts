@@ -130,6 +130,16 @@ describe("Telegram Bot API - getUpdates (long polling)", () => {
     const res = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
     expect(res.status).toBe(409);
   });
+
+  it("rejects concurrent getUpdates for the same bot (409)", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const first = postJson(tx.app, `/bot${bot.token}/getUpdates`, { timeout: 1 });
+    // Yield so the first request registers its long-poll waiter.
+    await new Promise((r) => setImmediate(r));
+    const second = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
+    expect(second.status).toBe(409);
+    await first;
+  }, 3000);
 });
 
 describe("Telegram Bot API - commands and entities", () => {
