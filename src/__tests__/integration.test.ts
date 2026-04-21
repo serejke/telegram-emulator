@@ -97,6 +97,59 @@ describe("Integration — forum topics", () => {
     expect(sent.result.message_thread_id).toBe(message_thread_id);
   });
 
+  it("bot can createForumTopic / editForumTopic / closeForumTopic / deleteForumTopic via Bot API", async () => {
+    const bot = createBot(tx.store, { username: "fbot" });
+    const user = createUser(tx.store, { first_name: "A" });
+    const sg = createSupergroup(tx.store, {
+      title: "SG",
+      memberIds: [user.user_id],
+      botIds: [bot.bot_id],
+      isForum: true,
+    });
+
+    const created = await json<{ result: { message_thread_id: number; name: string; icon_color: number } }>(
+      await postJson(tx.app, `/bot${bot.token}/createForumTopic`, {
+        chat_id: sg.chat_id,
+        name: "General",
+      }),
+    );
+    expect(created.result.name).toBe("General");
+    expect(typeof created.result.message_thread_id).toBe("number");
+
+    const edited = await json<{ result: boolean }>(
+      await postJson(tx.app, `/bot${bot.token}/editForumTopic`, {
+        chat_id: sg.chat_id,
+        message_thread_id: created.result.message_thread_id,
+        name: "Renamed",
+      }),
+    );
+    expect(edited.result).toBe(true);
+
+    const closed = await json<{ result: boolean }>(
+      await postJson(tx.app, `/bot${bot.token}/closeForumTopic`, {
+        chat_id: sg.chat_id,
+        message_thread_id: created.result.message_thread_id,
+      }),
+    );
+    expect(closed.result).toBe(true);
+
+    const reopened = await json<{ result: boolean }>(
+      await postJson(tx.app, `/bot${bot.token}/reopenForumTopic`, {
+        chat_id: sg.chat_id,
+        message_thread_id: created.result.message_thread_id,
+      }),
+    );
+    expect(reopened.result).toBe(true);
+
+    const deleted = await json<{ result: boolean }>(
+      await postJson(tx.app, `/bot${bot.token}/deleteForumTopic`, {
+        chat_id: sg.chat_id,
+        message_thread_id: created.result.message_thread_id,
+      }),
+    );
+    expect(deleted.result).toBe(true);
+  });
+
   it("rejects message_thread_id in non-supergroup chats", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const user = createUser(tx.store, { first_name: "A" });

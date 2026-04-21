@@ -199,6 +199,8 @@ export interface TelegramForumTopic extends Entity {
   name: string;
   icon_color?: number;
   icon_custom_emoji_id?: string;
+  is_closed?: boolean;
+  is_deleted?: boolean;
 }
 
 export interface TelegramDocument {

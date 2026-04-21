@@ -60,6 +60,7 @@ export interface CreateGroupChatInput {
   creatorUserId?: number;
   adminUserIds?: number[];
   adminBotIds?: number[];
+  isForum?: boolean;
 }
 
 export function createBot(store: Store, input: CreateBotInput): TelegramBot {
@@ -147,6 +148,7 @@ export function createGroupChat(store: Store, input: CreateGroupChatInput): Tele
     admin_user_ids: input.adminUserIds ? [...input.adminUserIds] : undefined,
     admin_bot_ids: input.adminBotIds ? [...input.adminBotIds] : undefined,
     next_message_id: 1,
+    is_forum: input.type === "supergroup" ? input.isForum : undefined,
   });
 }
 
@@ -222,6 +224,9 @@ export function createForumTopic(
   if (!chat) throw new Error(`chat ${input.chatId} not found`);
   if (chat.type !== "supergroup") {
     throw new Error(`forum topics require a supergroup; chat ${input.chatId} is ${chat.type}`);
+  }
+  if (!chat.is_forum) {
+    ts.chats.update(chat.id, { is_forum: true });
   }
   const existing = ts.forumTopics.findBy("chat_id", input.chatId);
   const maxId = existing.reduce((m, t) => Math.max(m, t.message_thread_id), 1);
