@@ -48,7 +48,7 @@ export class TelegramDispatcher {
     this.backoffEnabled = enabled;
   }
 
-  enqueue(botId: number, type: UpdateType, payload: Record<string, unknown>): TelegramUpdate {
+  enqueue(botId: number, type: UpdateType, payload: object): TelegramUpdate {
     const ts = getTelegramStore(this.store);
     const bot = ts.bots.findOneBy("bot_id", botId);
     if (!bot) {

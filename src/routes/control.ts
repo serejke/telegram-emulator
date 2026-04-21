@@ -35,6 +35,7 @@ import type {
   TelegramMessage,
   TelegramUser,
 } from "../entities.js";
+import type { WireMessage } from "../types/wire/index.js";
 
 // Chat ID conventions (match real Telegram):
 //   private:    positive numbers equal to user_id
@@ -802,7 +803,7 @@ export function simulateEditedUserMessage(
   return { update_id: firstUpdateId };
 }
 
-export function getSentMessages(store: Store, chatId: number): Record<string, unknown>[] {
+export function getSentMessages(store: Store, chatId: number): WireMessage[] {
   const ts = getTelegramStore(store);
   return ts.messages
     .findBy("chat_id", chatId)
@@ -811,7 +812,7 @@ export function getSentMessages(store: Store, chatId: number): Record<string, un
     .map((m) => serializeMessage(m, { store }));
 }
 
-export function getAllMessages(store: Store, chatId: number): Record<string, unknown>[] {
+export function getAllMessages(store: Store, chatId: number): WireMessage[] {
   const ts = getTelegramStore(store);
   return ts.messages
     .findBy("chat_id", chatId)

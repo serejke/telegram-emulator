@@ -6,6 +6,7 @@ import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
 import { serializeBotAsUser, serializeChatFullInfo, serializeUser } from "../serializers.js";
 import type { TelegramChat } from "../entities.js";
+import type { WireBotAsUser, WireUser } from "../types/wire/index.js";
 
 function coerceChatId(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -96,7 +97,7 @@ export function getChatAdministrators(c: Context, body: Record<string, unknown>,
   if (!chat) return tgError(c, "Bad Request: chat not found");
 
   const admins: Record<string, unknown>[] = [];
-  const push = (status: "creator" | "administrator", subject: Record<string, unknown>) => {
+  const push = (status: "creator" | "administrator", subject: WireUser | WireBotAsUser) => {
     const base: Record<string, unknown> = { status, user: subject };
     const extras = adminMemberExtras(status, chat);
     for (const [k, v] of Object.entries(extras)) {

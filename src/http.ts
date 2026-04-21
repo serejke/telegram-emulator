@@ -1,7 +1,12 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
-export function ok<T extends Record<string, unknown>>(c: Context, result: T) {
+// `ok(c, result)` envelopes the method's response body. The payload
+// may be any Bot API wire object (WireMessage, WireUser, WireChat,
+// WireChatFullInfo, WireChatMember) or plain scalar (e.g. a bare
+// `true` for setWebhook). Kept `unknown` at this layer — the emitting
+// serializer is what stamps the concrete type.
+export function ok(c: Context, result: unknown) {
   return c.json({ ok: true, result });
 }
 

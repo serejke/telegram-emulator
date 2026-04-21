@@ -6,6 +6,14 @@ import type {
   TelegramMessage,
   TelegramUser,
 } from "./entities.js";
+import type {
+  WireBotAsUser,
+  WireChat,
+  WireChatFullInfo,
+  WireMessage,
+  WireUser,
+} from "./types/wire/index.js";
+import type { ChatPermissions } from "./types/store/chat.js";
 
 export function resolveBotFromToken(store: Store, token: string): TelegramBot | null {
   const ts = getTelegramStore(store);
@@ -13,8 +21,8 @@ export function resolveBotFromToken(store: Store, token: string): TelegramBot | 
   return direct ?? null;
 }
 
-export function serializeUser(u: TelegramUser): Record<string, unknown> {
-  const out: Record<string, unknown> = {
+export function serializeUser(u: TelegramUser): WireUser {
+  const out: WireUser = {
     id: u.user_id,
     is_bot: u.is_bot,
     first_name: u.first_name,
@@ -25,7 +33,7 @@ export function serializeUser(u: TelegramUser): Record<string, unknown> {
   return out;
 }
 
-export function serializeBotAsUser(b: TelegramBot): Record<string, unknown> {
+export function serializeBotAsUser(b: TelegramBot): WireBotAsUser {
   return {
     id: b.bot_id,
     is_bot: true,
@@ -34,8 +42,8 @@ export function serializeBotAsUser(b: TelegramBot): Record<string, unknown> {
   };
 }
 
-export function serializeChat(ch: TelegramChat): Record<string, unknown> {
-  const out: Record<string, unknown> = {
+export function serializeChat(ch: TelegramChat): WireChat {
+  const out: WireChat = {
     id: ch.chat_id,
     type: ch.type,
   };
@@ -47,7 +55,7 @@ export function serializeChat(ch: TelegramChat): Record<string, unknown> {
   return out;
 }
 
-const DEFAULT_GROUP_PERMISSIONS = {
+const DEFAULT_GROUP_PERMISSIONS: ChatPermissions = {
   can_send_messages: true,
   can_send_audios: true,
   can_send_documents: true,
@@ -67,10 +75,12 @@ const DEFAULT_GROUP_PERMISSIONS = {
 export function serializeChatFullInfo(
   ch: TelegramChat,
   ctx: { store: Store },
-): Record<string, unknown> {
-  const out = serializeChat(ch);
-  out.accent_color_id = ch.accent_color_id ?? 0;
-  out.max_reaction_count = ch.max_reaction_count ?? 11;
+): WireChatFullInfo {
+  const out: WireChatFullInfo = {
+    ...serializeChat(ch),
+    accent_color_id: ch.accent_color_id ?? 0,
+    max_reaction_count: ch.max_reaction_count ?? 11,
+  };
   if (ch.bio) out.bio = ch.bio;
   if (ch.description) out.description = ch.description;
   if (ch.invite_link) out.invite_link = ch.invite_link;
@@ -95,7 +105,7 @@ export function serializeChatFullInfo(
 export function serializeMessage(
   msg: TelegramMessage,
   ctx: { store: Store; depth?: number },
-): Record<string, unknown> {
+): WireMessage {
   const ts = getTelegramStore(ctx.store);
   const chat = ts.chats.findOneBy("chat_id", msg.chat_id);
   const fromUser = msg.from_user_id !== null ? ts.users.findOneBy("user_id", msg.from_user_id) : undefined;
@@ -105,13 +115,13 @@ export function serializeMessage(
       ? ts.chats.findOneBy("chat_id", msg.sender_chat_id)
       : undefined;
 
-  const from = fromUser
+  const from: WireUser | WireBotAsUser | undefined = fromUser
     ? serializeUser(fromUser)
     : fromBot
       ? serializeBotAsUser(fromBot)
       : undefined;
 
-  const out: Record<string, unknown> = {
+  const out: WireMessage = {
     message_id: msg.message_id,
     date: msg.date,
     chat: chat ? serializeChat(chat) : { id: msg.chat_id, type: "private" },
