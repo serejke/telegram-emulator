@@ -12,6 +12,27 @@ import {
   nextUserId,
 } from "../ids.js";
 import { parseTelegramBody } from "../http.js";
+import { parseJsonBody } from "../types/validators/body.js";
+import {
+  zChatMembershipInput,
+  zCreateBotInput,
+  zCreateChannelInput,
+  zCreateForumTopicControlBody,
+  zCreateGroupChatInput,
+  zCreatePrivateChatInput,
+  zCreateSupergroupInput,
+  zCreateUserInput,
+  zEditChannelPostInput,
+  zInjectFaultInput,
+  zPromoteChatMemberInput,
+  zSimulateCallbackInput,
+  zSimulateChannelPostInput,
+  zSimulateEditedUserMessageInput,
+  zSimulateReactionInput,
+  zSimulateUserMediaInput,
+  zSimulateUserMessageInput,
+  zSimulateUserPhotoInput,
+} from "../types/validators/control.js";
 import {
   serializeBotAsUser,
   serializeChat,
@@ -830,8 +851,9 @@ export function controlRoutes(ctx: RouteContext): void {
   });
 
   app.post(telegramPaths.bots(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const bot = createBot(store, body as unknown as CreateBotInput);
+    const r = await parseJsonBody(c, zCreateBotInput);
+    if (!r.ok) return r.response;
+    const bot = createBot(store, r.data);
     return c.json({ ok: true, bot: toBotDto(bot) });
   });
 
@@ -841,87 +863,93 @@ export function controlRoutes(ctx: RouteContext): void {
   });
 
   app.post(telegramPaths.users(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const user = createUser(store, body as unknown as CreateUserInput);
+    const r = await parseJsonBody(c, zCreateUserInput);
+    if (!r.ok) return r.response;
+    const user = createUser(store, r.data);
     return c.json({ ok: true, user: serializeUser(user) });
   });
 
   app.post(telegramPaths.privateChat(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const chat = createPrivateChat(store, body as unknown as CreatePrivateChatInput);
+    const r = await parseJsonBody(c, zCreatePrivateChatInput);
+    if (!r.ok) return r.response;
+    const chat = createPrivateChat(store, r.data);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
   app.post(telegramPaths.groupChat(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const chat = createGroupChat(store, body as unknown as CreateGroupChatInput);
+    const r = await parseJsonBody(c, zCreateGroupChatInput);
+    if (!r.ok) return r.response;
+    const chat = createGroupChat(store, r.data);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
   app.post(telegramPaths.chatPromote(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zPromoteChatMemberInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const chat = promoteChatMember(store, {
       chatId,
-      userId: body.userId as number | undefined,
-      botId: body.botId as number | undefined,
-      demote: body.demote === true,
+      userId: r.data.userId,
+      botId: r.data.botId,
+      demote: r.data.demote === true,
     });
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
   app.post(telegramPaths.chatMessages(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateUserMessageInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const result = simulateUserMessage(store, {
       chatId,
-      userId: Number(body.userId),
-      text: String(body.text ?? ""),
-      replyToMessageId: body.replyToMessageId as number | undefined,
+      userId: r.data.userId,
+      text: r.data.text,
+      replyToMessageId: r.data.replyToMessageId,
+      messageThreadId: r.data.messageThreadId,
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatPhotos(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateUserPhotoInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
-    const photoBytes =
-      body.photoBase64 !== undefined
-        ? Buffer.from(String(body.photoBase64), "base64")
-        : (body.photo as { bytes: Buffer } | undefined)?.bytes;
-    if (!photoBytes) {
-      return c.json({ ok: false, error: "photoBase64 or multipart photo required" }, 400);
-    }
+    const photoBytes = r.data.photoBase64 !== undefined
+      ? Buffer.from(r.data.photoBase64, "base64")
+      : r.data.photo!.bytes;
     const result = simulateUserPhoto(store, {
       chatId,
-      userId: Number(body.userId),
+      userId: r.data.userId,
       photoBytes,
-      mimeType: body.mimeType as string | undefined,
-      caption: body.caption as string | undefined,
+      mimeType: r.data.mimeType,
+      caption: r.data.caption,
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatCallbacks(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateCallbackInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const result = simulateCallback(store, {
       chatId,
-      userId: Number(body.userId),
-      messageId: Number(body.messageId),
-      callbackData: String(body.data ?? body.callbackData ?? ""),
+      userId: r.data.userId,
+      messageId: r.data.messageId,
+      callbackData: r.data.data ?? r.data.callbackData ?? "",
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatEdits(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateEditedUserMessageInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const result = simulateEditedUserMessage(store, {
       chatId,
-      messageId: Number(body.messageId),
-      userId: Number(body.userId),
-      text: String(body.text ?? ""),
+      messageId: r.data.messageId,
+      userId: r.data.userId,
+      text: r.data.text,
+      messageThreadId: r.data.messageThreadId,
     });
     return c.json({ ok: true, ...result });
   });
@@ -934,37 +962,30 @@ export function controlRoutes(ctx: RouteContext): void {
   });
 
   app.post(telegramPaths.chatAddBot(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zChatMembershipInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
-    const result = addBotToChat(store, {
-      chatId,
-      botId: Number(body.botId),
-      byUserId: Number(body.byUserId),
-    });
+    const result = addBotToChat(store, { chatId, botId: r.data.botId, byUserId: r.data.byUserId });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatRemoveBot(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zChatMembershipInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
-    const result = removeBotFromChat(store, {
-      chatId,
-      botId: Number(body.botId),
-      byUserId: Number(body.byUserId),
-    });
+    const result = removeBotFromChat(store, { chatId, botId: r.data.botId, byUserId: r.data.byUserId });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatReactions(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateReactionInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const result = simulateReaction(store, {
       chatId,
-      messageId: Number(body.messageId),
-      userId: Number(body.userId),
-      reaction: Array.isArray(body.reaction)
-        ? (body.reaction as SimulateReactionInput["reaction"])
-        : [],
+      messageId: r.data.messageId,
+      userId: r.data.userId,
+      reaction: r.data.reaction,
     });
     return c.json({ ok: true, ...result });
   });
@@ -977,89 +998,94 @@ export function controlRoutes(ctx: RouteContext): void {
   });
 
   app.post(telegramPaths.channel(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const chat = createChannel(store, body as unknown as CreateChannelInput);
+    const r = await parseJsonBody(c, zCreateChannelInput);
+    if (!r.ok) return r.response;
+    const chat = createChannel(store, r.data);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
   app.post(telegramPaths.supergroup(), async (c) => {
-    const body = await parseTelegramBody(c);
-    const chat = createSupergroup(store, body as unknown as CreateSupergroupInput);
+    const r = await parseJsonBody(c, zCreateSupergroupInput);
+    if (!r.ok) return r.response;
+    const chat = createSupergroup(store, r.data);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
   app.post(telegramPaths.chatTopics(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zCreateForumTopicControlBody);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
-    const result = createForumTopic(store, { chatId, name: String(body.name ?? "") });
+    const result = createForumTopic(store, { chatId, name: r.data.name });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.channelPosts(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateChannelPostInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const photoBytes =
-      body.photo_bytes_base64 !== undefined
-        ? Buffer.from(String(body.photo_bytes_base64), "base64")
+      r.data.photo_bytes_base64 !== undefined
+        ? Buffer.from(r.data.photo_bytes_base64, "base64")
         : undefined;
     const result = simulateChannelPost(store, {
       chatId,
-      text: body.text as string | undefined,
-      entities: body.entities as SimulateChannelPostInput["entities"],
-      caption: body.caption as string | undefined,
+      text: r.data.text,
+      entities: r.data.entities,
+      caption: r.data.caption,
       photoBytes,
-      replyToMessageId: body.reply_to_message_id as number | undefined,
-      messageThreadId: body.message_thread_id as number | undefined,
+      replyToMessageId: r.data.reply_to_message_id,
+      messageThreadId: r.data.message_thread_id,
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.channelPostEdits(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zEditChannelPostInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
     const result = simulateChannelPost(store, {
       chatId,
-      text: body.text as string | undefined,
-      caption: body.caption as string | undefined,
+      text: r.data.text,
+      caption: r.data.caption,
       edited: true,
-      existingMessageId: Number(body.messageId),
+      existingMessageId: r.data.messageId,
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.chatMedia(":chatId"), async (c) => {
+    const r = await parseJsonBody(c, zSimulateUserMediaInput);
+    if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const body = await parseTelegramBody(c);
-    const bytes =
-      body.bytesBase64 !== undefined
-        ? Buffer.from(String(body.bytesBase64), "base64")
-        : (body.file as { bytes: Buffer } | undefined)?.bytes;
-    if (!bytes) return c.json({ ok: false, error: "bytesBase64 or file required" }, 400);
+    const bytes = r.data.bytesBase64 !== undefined
+      ? Buffer.from(r.data.bytesBase64, "base64")
+      : r.data.file!.bytes;
     const result = simulateUserMedia(store, {
       chatId,
-      userId: Number(body.userId),
-      kind: body.kind as SimulateUserMediaInput["kind"],
+      userId: r.data.userId,
+      kind: r.data.kind,
       bytes,
-      mimeType: body.mimeType as string | undefined,
-      caption: body.caption as string | undefined,
-      duration: body.duration as number | undefined,
-      width: body.width as number | undefined,
-      height: body.height as number | undefined,
-      fileName: body.fileName as string | undefined,
-      messageThreadId: body.messageThreadId as number | undefined,
+      mimeType: r.data.mimeType,
+      caption: r.data.caption,
+      duration: r.data.duration,
+      width: r.data.width,
+      height: r.data.height,
+      fileName: r.data.fileName,
+      messageThreadId: r.data.messageThreadId,
     });
     return c.json({ ok: true, ...result });
   });
 
   app.post(telegramPaths.faults(), async (c) => {
-    const body = await parseTelegramBody(c);
+    const r = await parseJsonBody(c, zInjectFaultInput);
+    if (!r.ok) return r.response;
     const result = injectFault(store, {
-      botId: Number(body.bot_id ?? body.botId),
-      method: String(body.method ?? "*"),
-      error_code: Number(body.error_code ?? body.errorCode),
-      description: body.description as string | undefined,
-      retry_after: body.retry_after as number | undefined,
-      count: body.count as number | undefined,
+      botId: (r.data.bot_id ?? r.data.botId)!,
+      method: r.data.method ?? "*",
+      error_code: (r.data.error_code ?? r.data.errorCode)!,
+      description: r.data.description,
+      retry_after: r.data.retry_after ?? r.data.retryAfter,
+      count: r.data.count,
     });
     return c.json({ ok: true, ...result });
   });
