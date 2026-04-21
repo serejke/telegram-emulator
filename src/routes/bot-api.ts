@@ -1,15 +1,11 @@
 import type { Context } from "hono";
 import type { RouteContext, Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
-import { generateCallbackQueryId, nextFileId } from "../ids.js";
+import { nextFileId } from "../ids.js";
 import { ok, okRaw, parseTelegramBody, tgError } from "../http.js";
 import {
   resolveBotFromToken,
-  serializeBotAsUser,
-  serializeChat,
-  serializeChatFullInfo,
   serializeMessage,
-  serializeUser,
 } from "../serializers.js";
 import { parseEntities } from "../entity-parser.js";
 import { getDispatcher } from "../dispatcher.js";
@@ -36,26 +32,43 @@ import {
   getWebhookInfo,
   setWebhook,
 } from "./bot-api-delivery.js";
+import type { z } from "zod";
+import { parseWithSchema, type ParseResult } from "../types/validators/body.js";
+import {
+  zAnswerCallbackQueryBody,
+  zDeleteMessageBody,
+  zEditMessageReplyMarkupBody,
+  zEditMessageTextBody,
+  zGetFileBody,
+  zSendMessageBody,
+  zSendMessageDraftBody,
+  zSendPhotoBody,
+  zSendDocumentBody,
+  zSetMessageReactionBody,
+  zSetMyCommandsBody,
+  BODY_FOR_MEDIA,
+  type MediaKind,
+  type SendAnimationBody,
+  type SendAudioBody,
+  type SendStickerBody,
+  type SendVideoBody,
+  type SendVoiceBody,
+  type MultipartFileRef,
+} from "../types/validators/index.js";
 import type {
   InlineKeyboardMarkup,
   MessageEntity,
   PhotoSize,
   ReplyMarkup,
-  TelegramAnimation,
-  TelegramAudio,
   TelegramBot,
   TelegramChat,
   TelegramDocument,
   TelegramFault,
   TelegramMessage,
-  TelegramSticker,
-  TelegramVideo,
-  TelegramVoice,
 } from "../entities.js";
+import { isInlineKeyboardMarkup } from "../types/wire/reply-markup.js";
 
-type MultipartFile = { __file: true; name: string; type: string; bytes: Buffer };
-
-function isMultipartFile(v: unknown): v is MultipartFile {
+function isMultipartFile(v: unknown): v is MultipartFileRef {
   return typeof v === "object" && v !== null && (v as { __file?: boolean }).__file === true;
 }
 
@@ -89,7 +102,7 @@ export function botApiRoutes(ctx: RouteContext): void {
       );
     }
 
-    const body =
+    const body: unknown =
       c.req.method === "GET"
         ? queryToBody(c)
         : await parseTelegramBody(c);
@@ -195,9 +208,11 @@ export function botApiRoutes(ctx: RouteContext): void {
   });
 }
 
-function queryToBody(c: Context): Record<string, unknown> {
+// GET-style requests embed body fields in the query string; preserve the
+// transport at this layer — zod validators handle type-coercing the values.
+function queryToBody(c: Context): unknown {
   const url = new URL(c.req.url);
-  const result: Record<string, unknown> = {};
+  const result: { [key: string]: unknown } = {};
   for (const [key, value] of url.searchParams) {
     try {
       result[key] = JSON.parse(value);
@@ -211,26 +226,23 @@ function queryToBody(c: Context): Record<string, unknown> {
 function sendMessage(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const rawText = typeof body.text === "string" ? (body.text as string) : "";
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
-  if (!rawText) return tgError(c, "Bad Request: text is required");
+  const r = parseWithSchema(c, zSendMessageBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
+
+  if (!body.text) return tgError(c, "Bad Request: text is required");
 
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found", 400);
   if (!chat.member_bot_ids.includes(bot.bot_id)) {
     return tgError(c, "Forbidden: bot is not a member of the chat", 403, 403);
   }
 
-  const replyMarkup = body.reply_markup as ReplyMarkup | undefined;
-  const replyTo = typeof body.reply_to_message_id === "number" ? (body.reply_to_message_id as number) : undefined;
-  const customEntities = Array.isArray(body.entities) ? (body.entities as MessageEntity[]) : undefined;
-
-  const parsed = applyParseMode(rawText, body.parse_mode, customEntities);
+  const parsed = applyParseMode(body.text, body.parse_mode, body.entities);
   if (!parsed.ok) return tgError(c, parsed.description, 400);
 
   // Real Telegram rejects messages whose visible text exceeds 4096 chars.
@@ -242,10 +254,10 @@ function sendMessage(
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);
   if (threadErr) return tgError(c, threadErr, 400);
 
-  if (replyTo !== undefined) {
+  if (body.reply_to_message_id !== undefined) {
     const target = ts.messages
-      .findBy("chat_id", chatId)
-      .find((m) => m.message_id === replyTo && !m.deleted);
+      .findBy("chat_id", body.chat_id)
+      .find((m) => m.message_id === body.reply_to_message_id && !m.deleted);
     if (!target) {
       return tgError(c, "Bad Request: message to be replied not found", 400, 400);
     }
@@ -259,12 +271,12 @@ function sendMessage(
     from_user_id: null,
     from_bot_id: bot.bot_id,
     sender_chat_id: null,
-    message_thread_id: typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : undefined,
+    message_thread_id: body.message_thread_id,
     date: Math.floor(Date.now() / 1000),
     text: parsed.text,
     entities: parsed.entities,
-    reply_to_message_id: replyTo,
-    reply_markup: replyMarkup,
+    reply_to_message_id: body.reply_to_message_id,
+    reply_markup: body.reply_markup,
   });
 
   return ok(c, serializeMessage(msg, { store }));
@@ -274,11 +286,10 @@ const TEXT_LIMIT = 4096;
 const CAPTION_LIMIT = 1024;
 
 function validateMessageThreadId(
-  raw: unknown,
+  raw: number | undefined,
   chat: TelegramChat,
 ): string | null {
-  if (raw === undefined || raw === null) return null;
-  if (typeof raw !== "number") return null;
+  if (raw === undefined) return null;
   if (chat.type !== "supergroup") return "Bad Request: message thread not found";
   return null;
 }
@@ -292,33 +303,29 @@ function validateMessageThreadId(
  */
 function applyParseMode(
   rawText: string,
-  parseMode: unknown,
+  parseMode: "MarkdownV2" | "HTML" | "Markdown" | undefined,
   callerEntities: MessageEntity[] | undefined,
 ): { ok: true; text: string; entities: MessageEntity[] | undefined } | { ok: false; description: string } {
-  const mode = typeof parseMode === "string" ? parseMode : "";
-  if (!mode) {
+  if (!parseMode) {
     return { ok: true, text: rawText, entities: callerEntities };
   }
   try {
-    if (mode === "MarkdownV2") {
+    if (parseMode === "MarkdownV2") {
       const { text, entities } = parseMarkdownV2(rawText);
       const merged = mergeEntities(entities, callerEntities);
       return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
     }
-    if (mode === "HTML") {
+    if (parseMode === "HTML") {
       const { text, entities } = parseHtml(rawText);
       const merged = mergeEntities(entities, callerEntities);
       return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
     }
-    if (mode === "Markdown") {
-      // Legacy Markdown v1: simpler grammar than V2 (no spoiler/underline/
-      // strikethrough, `_` and `*` only, no escape syntax). Real Telegram
-      // still accepts it; many older SDKs default to it.
-      const { text, entities } = parseLegacyMarkdown(rawText);
-      const merged = mergeEntities(entities, callerEntities);
-      return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
-    }
-    return { ok: false, description: `Bad Request: unknown parse_mode '${mode}'` };
+    // Legacy Markdown v1: simpler grammar than V2 (no spoiler/underline/
+    // strikethrough, `_` and `*` only, no escape syntax). Real Telegram
+    // still accepts it; many older SDKs default to it.
+    const { text, entities } = parseLegacyMarkdown(rawText);
+    const merged = mergeEntities(entities, callerEntities);
+    return { ok: true, text, entities: merged.length > 0 ? merged : undefined };
   } catch (err) {
     if (err instanceof MarkdownParseError || err instanceof HtmlParseError) {
       return { ok: false, description: err.message };
@@ -404,44 +411,32 @@ function parseLegacyMarkdown(input: string): { text: string; entities: MessageEn
 async function sendPhoto(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+  const r = parseWithSchema(c, zSendPhotoBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   if (!chat.member_bot_ids.includes(bot.bot_id)) {
     return tgError(c, "Forbidden: bot is not a member of the chat", 403, 403);
   }
 
-  const rawCaption = typeof body.caption === "string" ? (body.caption as string) : undefined;
-  const captionEntitiesCaller = Array.isArray(body.caption_entities)
-    ? (body.caption_entities as MessageEntity[])
-    : undefined;
-  let caption = rawCaption;
-  let captionEntities = captionEntitiesCaller;
-  if (rawCaption !== undefined) {
-    const parsed = applyParseMode(rawCaption, body.parse_mode, captionEntitiesCaller);
-    if (!parsed.ok) return tgError(c, parsed.description, 400);
-    if (parsed.text.length > CAPTION_LIMIT) {
-      return tgError(c, "Bad Request: message caption is too long", 400, 400);
-    }
-    caption = parsed.text;
-    captionEntities = parsed.entities;
-  }
+  const captionResult = applyCaption(body.caption, body.parse_mode, body.caption_entities);
+  if (!captionResult.ok) return tgError(c, captionResult.description, 400);
+  const { caption, captionEntities } = captionResult;
+
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);
   if (threadErr) return tgError(c, threadErr, 400);
-  const replyMarkup = body.reply_markup as ReplyMarkup | undefined;
 
   let photoSizes: PhotoSize[];
 
-  const photoInput = body.photo;
-  if (typeof photoInput === "string") {
+  if (typeof body.photo === "string") {
     // Re-send by file_id — real Telegram preserves the file_id exactly.
-    const file = ts.files.findOneBy("file_id", photoInput);
+    const file = ts.files.findOneBy("file_id", body.photo);
     if (!file) return tgError(c, "Bad Request: file not found");
     if (file.photo_sizes_json) {
       photoSizes = JSON.parse(file.photo_sizes_json) as PhotoSize[];
@@ -458,16 +453,17 @@ async function sendPhoto(
         },
       ];
     }
-  } else if (isMultipartFile(photoInput)) {
-    const bytes = photoInput.bytes;
-    const { sizes } = buildPhotoSizes(store, bytes, bot.bot_id, chatId);
+  } else {
+    const upload = body.photo;
+    const bytes = upload.bytes;
+    const { sizes } = buildPhotoSizes(store, bytes, bot.bot_id, body.chat_id);
     const photoSizesJson = JSON.stringify(sizes);
     for (const size of sizes) {
       ts.files.insert({
         file_id: size.file_id,
         file_unique_id: size.file_unique_id,
         owner_bot_id: bot.bot_id,
-        mime_type: photoInput.type || "image/jpeg",
+        mime_type: upload.type || "image/jpeg",
         file_size: bytes.length,
         width: size.width,
         height: size.height,
@@ -478,8 +474,6 @@ async function sendPhoto(
       });
     }
     photoSizes = sizes;
-  } else {
-    return tgError(c, "Bad Request: photo must be a file_id string or multipart upload");
   }
 
   const messageId = allocateMessageId(store, chat);
@@ -490,47 +484,62 @@ async function sendPhoto(
     from_user_id: null,
     from_bot_id: bot.bot_id,
     sender_chat_id: null,
-    message_thread_id: typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : undefined,
+    message_thread_id: body.message_thread_id,
     date: Math.floor(Date.now() / 1000),
     photo: photoSizes,
     caption,
     caption_entities: captionEntities,
-    reply_markup: replyMarkup,
+    reply_markup: body.reply_markup,
   });
 
   return ok(c, serializeMessage(msg, { store }));
 }
 
+function applyCaption(
+  rawCaption: string | undefined,
+  parseMode: "MarkdownV2" | "HTML" | "Markdown" | undefined,
+  callerEntities: MessageEntity[] | undefined,
+):
+  | { ok: true; caption: string | undefined; captionEntities: MessageEntity[] | undefined }
+  | { ok: false; description: string } {
+  if (rawCaption === undefined) {
+    return { ok: true, caption: undefined, captionEntities: callerEntities };
+  }
+  const parsed = applyParseMode(rawCaption, parseMode, callerEntities);
+  if (!parsed.ok) return parsed;
+  if (parsed.text.length > CAPTION_LIMIT) {
+    return { ok: false, description: "Bad Request: message caption is too long" };
+  }
+  return { ok: true, caption: parsed.text, captionEntities: parsed.entities };
+}
+
 function setMessageReaction(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
-  if (chatId === null || messageId === null) return tgError(c, "Bad Request: chat_id and message_id required");
-  const reaction = Array.isArray(body.reaction)
-    ? (body.reaction as Array<{ type: string; emoji?: string; custom_emoji_id?: string }>)
-    : [];
+  const r = parseWithSchema(c, zSetMessageReactionBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
-  const msg = ts.messages.findBy("chat_id", chatId).find((m) => m.message_id === messageId);
+  const msg = ts.messages
+    .findBy("chat_id", body.chat_id)
+    .find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
 
   // Upsert the reaction row for this bot on this message.
   const existing = ts.reactions.all().find(
-    (r) => r.chat_id === chatId && r.message_id === messageId && r.sender_bot_id === bot.bot_id,
+    (rr) => rr.chat_id === body.chat_id && rr.message_id === body.message_id && rr.sender_bot_id === bot.bot_id,
   );
-  const typed = reaction
-    .filter((r) => r.type === "emoji" || r.type === "custom_emoji")
-    .map((r) =>
-      r.type === "emoji"
-        ? { type: "emoji" as const, emoji: r.emoji ?? "" }
-        : { type: "custom_emoji" as const, custom_emoji_id: r.custom_emoji_id ?? "" },
-    );
+  const typed = (body.reaction ?? []).map((rr) =>
+    rr.type === "emoji"
+      ? { type: "emoji" as const, emoji: rr.emoji ?? "" }
+      : { type: "custom_emoji" as const, custom_emoji_id: rr.custom_emoji_id ?? "" },
+  );
 
   if (existing) {
     if (typed.length === 0) {
@@ -540,8 +549,8 @@ function setMessageReaction(
     }
   } else if (typed.length > 0) {
     ts.reactions.insert({
-      chat_id: chatId,
-      message_id: messageId,
+      chat_id: body.chat_id,
+      message_id: body.message_id,
       sender_user_id: null,
       sender_bot_id: bot.bot_id,
       reaction: typed,
@@ -554,14 +563,14 @@ function setMessageReaction(
 function getFile(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const fileId = typeof body.file_id === "string" ? (body.file_id as string) : "";
-  if (!fileId) return tgError(c, "Bad Request: file_id is required");
+  const r = parseWithSchema(c, zGetFileBody, raw);
+  if (!r.ok) return r.response;
 
   const ts = getTelegramStore(store);
-  const file = ts.files.findOneBy("file_id", fileId);
+  const file = ts.files.findOneBy("file_id", r.data.file_id);
   if (!file) return tgError(c, "Bad Request: file not found");
 
   void bot;
@@ -576,22 +585,23 @@ function getFile(
 function answerCallbackQuery(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const id = typeof body.callback_query_id === "string" ? (body.callback_query_id as string) : "";
-  if (!id) return tgError(c, "Bad Request: callback_query_id is required");
+  const r = parseWithSchema(c, zAnswerCallbackQueryBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
-  const cq = ts.callbackQueries.findOneBy("callback_query_id", id);
+  const cq = ts.callbackQueries.findOneBy("callback_query_id", body.callback_query_id);
   if (!cq) return tgError(c, "Bad Request: callback_query not found");
 
   ts.callbackQueries.update(cq.id, {
     answered: true,
-    answer_text: typeof body.text === "string" ? (body.text as string) : undefined,
-    answer_show_alert: typeof body.show_alert === "boolean" ? (body.show_alert as boolean) : undefined,
-    answer_url: typeof body.url === "string" ? (body.url as string) : undefined,
-    answer_cache_time: typeof body.cache_time === "number" ? (body.cache_time as number) : undefined,
+    answer_text: body.text,
+    answer_show_alert: body.show_alert,
+    answer_url: body.url,
+    answer_cache_time: body.cache_time,
   });
   void bot;
   return c.json({ ok: true, result: true });
@@ -600,12 +610,14 @@ function answerCallbackQuery(
 function setMyCommands(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const commands = Array.isArray(body.commands) ? (body.commands as Array<{ command: string; description: string }>) : [];
+  const r = parseWithSchema(c, zSetMyCommandsBody, raw);
+  if (!r.ok) return r.response;
+
   const ts = getTelegramStore(store);
-  ts.bots.update(bot.id, { commands });
+  ts.bots.update(bot.id, { commands: r.data.commands });
   return okRaw(c, true);
 }
 
@@ -616,20 +628,28 @@ function getMyCommands(c: Context, bot: TelegramBot) {
 function editMessageReplyMarkup(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
-  if (chatId === null || messageId === null) return tgError(c, "Bad Request: chat_id and message_id required");
+  const r = parseWithSchema(c, zEditMessageReplyMarkupBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
   const msg = ts.messages
-    .findBy("chat_id", chatId)
-    .find((m) => m.message_id === messageId);
+    .findBy("chat_id", body.chat_id)
+    .find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
 
-  const newMarkup = body.reply_markup as InlineKeyboardMarkup | undefined;
+  // editMessageReplyMarkup only accepts inline keyboards — the other
+  // reply-markup kinds can't be attached to an existing message.
+  let newMarkup: InlineKeyboardMarkup | undefined;
+  if (body.reply_markup !== undefined) {
+    if (!isInlineKeyboardMarkup(body.reply_markup)) {
+      return tgError(c, "Bad Request: reply_markup must be an inline keyboard");
+    }
+    newMarkup = body.reply_markup;
+  }
   ts.messages.update(msg.id, { reply_markup: newMarkup, edited_date: Math.floor(Date.now() / 1000) });
 
   void bot;
@@ -637,22 +657,10 @@ function editMessageReplyMarkup(
   return ok(c, serializeMessage(updated, { store }));
 }
 
-function coerceChatId(v: unknown): number | null {
-  if (typeof v === "number") return v;
-  if (typeof v === "string" && /^-?\d+$/.test(v)) return Number(v);
-  if (typeof v === "string" && v.startsWith("@")) {
-    // Username lookup isn't supported in Phase 1; caller should use numeric chat_id.
-    return null;
-  }
-  return null;
-}
-
 export function parseInlineKeyboard(markup: unknown): InlineKeyboardMarkup | null {
   if (!markup || typeof markup !== "object") return null;
-  const m = markup as Record<string, unknown>;
-  if (Array.isArray(m.inline_keyboard)) {
-    return m as unknown as InlineKeyboardMarkup;
-  }
+  const m = markup as ReplyMarkup;
+  if (isInlineKeyboardMarkup(m)) return m;
   return null;
 }
 
@@ -722,59 +730,82 @@ function faultHttpStatus(errorCode: number): 400 | 401 | 403 | 404 | 429 {
   return 400;
 }
 
-type MediaKind = "video" | "audio" | "voice" | "animation" | "sticker";
+// Narrow the per-kind zod body to (a) its media input field and
+// (b) the extra per-kind fields the handler consumes. Keeps the
+// dispatcher typed without a cast at the output site.
+type AnyMediaBody =
+  | SendVideoBody
+  | SendAudioBody
+  | SendVoiceBody
+  | SendAnimationBody
+  | SendStickerBody;
+
+// Lift the media-input field out of the per-kind body. Each branch has
+// exactly one such field whose key matches the method's kind. Using
+// `in` guards keeps the access type-checked without a cast.
+function pickMediaInput(body: AnyMediaBody, kind: MediaKind): string | MultipartFileRef {
+  switch (kind) {
+    case "video":
+      return "video" in body ? body.video : unreachable(kind);
+    case "audio":
+      return "audio" in body ? body.audio : unreachable(kind);
+    case "voice":
+      return "voice" in body ? body.voice : unreachable(kind);
+    case "animation":
+      return "animation" in body ? body.animation : unreachable(kind);
+    case "sticker":
+      return "sticker" in body ? body.sticker : unreachable(kind);
+  }
+}
+
+function unreachable(kind: MediaKind): never {
+  // The zod schema guarantees the per-kind field is present. Reached
+  // only if BODY_FOR_MEDIA routing drifts from pickMediaInput — the
+  // assertion surfaces the bug loudly rather than silently.
+  throw new Error(`sendMediaMessage: ${kind} body missing its media field`);
+}
 
 async function sendMediaMessage(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
   kind: MediaKind,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+  const schema = BODY_FOR_MEDIA[kind] as z.ZodType<AnyMediaBody>;
+  const r: ParseResult<AnyMediaBody> = parseWithSchema(c, schema, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   if (!chat.member_bot_ids.includes(bot.bot_id)) {
     return tgError(c, "Forbidden: bot is not a member of the chat", 403, 403);
   }
 
   // Caption + parse_mode (sticker has no caption).
-  const rawCaption = typeof body.caption === "string" ? (body.caption as string) : undefined;
-  const callerCaptionEntities = Array.isArray(body.caption_entities)
-    ? (body.caption_entities as MessageEntity[])
-    : undefined;
-  let caption = rawCaption;
-  let captionEntities = callerCaptionEntities;
-  if (rawCaption !== undefined) {
-    if (kind === "sticker") {
-      // Real Telegram silently ignores captions on stickers.
-      caption = undefined;
-      captionEntities = undefined;
-    } else {
-      const parsed = applyParseMode(rawCaption, body.parse_mode, callerCaptionEntities);
-      if (!parsed.ok) return tgError(c, parsed.description, 400);
-      if (parsed.text.length > CAPTION_LIMIT) {
-        return tgError(c, "Bad Request: message caption is too long", 400, 400);
-      }
-      caption = parsed.text;
-      captionEntities = parsed.entities;
-    }
+  let caption: string | undefined;
+  let captionEntities: MessageEntity[] | undefined;
+  if (kind === "sticker") {
+    // Real Telegram silently ignores captions on stickers.
+    caption = undefined;
+    captionEntities = undefined;
+  } else {
+    const capResult = applyCaption(body.caption, body.parse_mode, body.caption_entities);
+    if (!capResult.ok) return tgError(c, capResult.description, 400);
+    caption = capResult.caption;
+    captionEntities = capResult.captionEntities;
   }
 
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);
   if (threadErr) return tgError(c, threadErr, 400);
 
-  const replyMarkup = body.reply_markup as ReplyMarkup | undefined;
+  const input = pickMediaInput(body, kind);
 
-  const bodyKey = kind;
-  const input = body[bodyKey];
-
-  const duration = typeof body.duration === "number" ? (body.duration as number) : 0;
-  const width = typeof body.width === "number" ? (body.width as number) : 0;
-  const height = typeof body.height === "number" ? (body.height as number) : 0;
+  const duration = body.duration ?? 0;
+  const width = body.width ?? 0;
+  const height = body.height ?? 0;
 
   let file_id: string;
   let file_unique_id: string;
@@ -793,7 +824,7 @@ async function sendMediaMessage(
     file_size = file.file_size;
   } else if (isMultipartFile(input)) {
     const bytes = input.bytes;
-    const ids = nextFileId(store, bot.bot_id, chatId, kind[0]);
+    const ids = nextFileId(store, bot.bot_id, body.chat_id, kind[0]);
     file_id = ids.file_id;
     file_unique_id = ids.file_unique_id;
     file_name = input.name;
@@ -827,11 +858,11 @@ async function sendMediaMessage(
     duration,
     mime_type,
     file_name,
-    performer: typeof body.performer === "string" ? (body.performer as string) : undefined,
-    title: typeof body.title === "string" ? (body.title as string) : undefined,
-    emoji: typeof body.emoji === "string" ? (body.emoji as string) : undefined,
-    is_animated: Boolean(body.is_animated),
-    is_video: Boolean(body.is_video),
+    performer: "performer" in body ? body.performer : undefined,
+    title: "title" in body ? body.title : undefined,
+    emoji: "emoji" in body ? body.emoji : undefined,
+    is_animated: body.is_animated === true,
+    is_video: body.is_video === true,
   });
 
   const messageId = allocateMessageId(store, chat);
@@ -842,12 +873,12 @@ async function sendMediaMessage(
     from_user_id: null,
     from_bot_id: bot.bot_id,
     sender_chat_id: null,
-    message_thread_id: typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : undefined,
+    message_thread_id: body.message_thread_id,
     date: Math.floor(Date.now() / 1000),
     [kind]: mediaField,
     caption,
     caption_entities: captionEntities,
-    reply_markup: replyMarkup,
+    reply_markup: body.reply_markup,
   });
 
   return ok(c, serializeMessage(msg, { store }));
@@ -873,23 +904,24 @@ function defaultMimeForKind(kind: MediaKind): string {
 function editMessageText(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
-  const rawText = typeof body.text === "string" ? (body.text as string) : "";
-  if (chatId === null || messageId === null || !rawText) {
-    return tgError(c, "Bad Request: chat_id, message_id, text required");
-  }
+  const r = parseWithSchema(c, zEditMessageTextBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
+
+  if (!body.text) return tgError(c, "Bad Request: text is required");
+
   const ts = getTelegramStore(store);
-  const msg = ts.messages.findBy("chat_id", chatId).find((m) => m.message_id === messageId);
+  const msg = ts.messages
+    .findBy("chat_id", body.chat_id)
+    .find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
   if (msg.from_bot_id !== bot.bot_id) {
     return tgError(c, "Bad Request: message can't be edited by this bot", 403, 403);
   }
-  const callerEntities = Array.isArray(body.entities) ? (body.entities as MessageEntity[]) : undefined;
-  const parsed = applyParseMode(rawText, body.parse_mode, callerEntities);
+  const parsed = applyParseMode(body.text, body.parse_mode, body.entities);
   if (!parsed.ok) return tgError(c, parsed.description, 400);
   if (parsed.text.length > TEXT_LIMIT) {
     return tgError(c, "Bad Request: message is too long", 400, 400);
@@ -900,7 +932,7 @@ function editMessageText(
     edited_date: Math.floor(Date.now() / 1000),
   });
   const updated = ts.messages.get(msg.id)!;
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (chat) dispatchEditedMessage(store, chat, bot.bot_id, updated);
   return ok(c, serializeMessage(updated, { store }));
 }
@@ -926,14 +958,17 @@ function dispatchEditedMessage(
 function deleteMessage(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
-  if (chatId === null || messageId === null) return tgError(c, "Bad Request: chat_id and message_id required");
+  const r = parseWithSchema(c, zDeleteMessageBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
+
   const ts = getTelegramStore(store);
-  const msg = ts.messages.findBy("chat_id", chatId).find((m) => m.message_id === messageId);
+  const msg = ts.messages
+    .findBy("chat_id", body.chat_id)
+    .find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
   // Telegram allows bots to delete their own messages unconditionally,
   // and messages from other senders only if the bot has sufficient rights
@@ -948,17 +983,18 @@ function deleteMessage(
 function sendMessageDraft(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  const draftId = typeof body.draft_id === "number" ? (body.draft_id as number) : 0;
-  const text = typeof body.text === "string" ? (body.text as string) : "";
-  if (chatId === null || draftId === 0 || !text) {
+  const r = parseWithSchema(c, zSendMessageDraftBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
+
+  if (body.draft_id === 0 || !body.text) {
     return tgError(c, "Bad Request: chat_id, draft_id (non-zero), text required");
   }
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   // Real Telegram restricts sendMessageDraft to private chats.
   if (chat.type !== "private") {
@@ -967,20 +1003,19 @@ function sendMessageDraft(
   if (!chat.member_bot_ids.includes(bot.bot_id)) {
     return tgError(c, "Forbidden: bot is not a member of the chat", 403, 403);
   }
-  const entities = Array.isArray(body.entities) ? (body.entities as MessageEntity[]) : undefined;
 
   const existing = ts.draftSnapshots
-    .findBy("chat_id", chatId)
-    .filter((s) => s.draft_id === draftId && s.bot_id === bot.bot_id);
+    .findBy("chat_id", body.chat_id)
+    .filter((s) => s.draft_id === body.draft_id && s.bot_id === bot.bot_id);
   const seq = existing.length > 0 ? Math.max(...existing.map((s) => s.seq)) + 1 : 1;
 
   ts.draftSnapshots.insert({
-    chat_id: chatId,
-    draft_id: draftId,
+    chat_id: body.chat_id,
+    draft_id: body.draft_id,
     bot_id: bot.bot_id,
     seq,
-    text,
-    entities,
+    text: body.text,
+    entities: body.entities,
   });
 
   return c.json({ ok: true, result: true });
@@ -989,44 +1024,32 @@ function sendMessageDraft(
 async function sendDocument(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+  const r = parseWithSchema(c, zSendDocumentBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   if (!chat.member_bot_ids.includes(bot.bot_id)) {
     return tgError(c, "Forbidden: bot is not a member of the chat", 403, 403);
   }
 
-  const rawCaption = typeof body.caption === "string" ? (body.caption as string) : undefined;
-  const callerCaptionEntities = Array.isArray(body.caption_entities)
-    ? (body.caption_entities as MessageEntity[])
-    : undefined;
-  let caption = rawCaption;
-  let captionEntities = callerCaptionEntities;
-  if (rawCaption !== undefined) {
-    const parsed = applyParseMode(rawCaption, body.parse_mode, callerCaptionEntities);
-    if (!parsed.ok) return tgError(c, parsed.description, 400);
-    if (parsed.text.length > CAPTION_LIMIT) {
-      return tgError(c, "Bad Request: message caption is too long", 400, 400);
-    }
-    caption = parsed.text;
-    captionEntities = parsed.entities;
-  }
+  const capResult = applyCaption(body.caption, body.parse_mode, body.caption_entities);
+  if (!capResult.ok) return tgError(c, capResult.description, 400);
+  const { caption, captionEntities } = capResult;
+
   const threadErr = validateMessageThreadId(body.message_thread_id, chat);
   if (threadErr) return tgError(c, threadErr, 400);
-  const replyMarkup = body.reply_markup as ReplyMarkup | undefined;
-  const docInput = body.document;
 
   let document: TelegramDocument;
 
-  if (typeof docInput === "string") {
+  if (typeof body.document === "string") {
     // Re-send by file_id — Telegram preserves the same ids on echo.
-    const file = ts.files.findOneBy("file_id", docInput);
+    const file = ts.files.findOneBy("file_id", body.document);
     if (!file) return tgError(c, "Bad Request: file not found");
     document = {
       file_id: file.file_id,
@@ -1035,31 +1058,30 @@ async function sendDocument(
       mime_type: file.mime_type,
       file_size: file.file_size,
     };
-  } else if (isMultipartFile(docInput)) {
-    const bytes = docInput.bytes;
-    const { file_id, file_unique_id } = nextFileId(store, bot.bot_id, chatId, "d");
+  } else {
+    const upload = body.document;
+    const bytes = upload.bytes;
+    const { file_id, file_unique_id } = nextFileId(store, bot.bot_id, body.chat_id, "d");
     ts.files.insert({
       file_id,
       file_unique_id,
       owner_bot_id: bot.bot_id,
-      mime_type: docInput.type || "application/octet-stream",
+      mime_type: upload.type || "application/octet-stream",
       file_size: bytes.length,
       width: 0,
       height: 0,
       file_path: `documents/${bot.bot_id}/${file_id}`,
       bytes_base64: bytes.toString("base64"),
       kind: "document" as const,
-      file_name: docInput.name,
+      file_name: upload.name,
     });
     document = {
       file_id,
       file_unique_id,
-      file_name: docInput.name,
-      mime_type: docInput.type || "application/octet-stream",
+      file_name: upload.name,
+      mime_type: upload.type || "application/octet-stream",
       file_size: bytes.length,
     };
-  } else {
-    return tgError(c, "Bad Request: document must be a file_id string or multipart upload");
   }
 
   const messageId = allocateMessageId(store, chat);
@@ -1070,12 +1092,12 @@ async function sendDocument(
     from_user_id: null,
     from_bot_id: bot.bot_id,
     sender_chat_id: null,
-    message_thread_id: typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : undefined,
+    message_thread_id: body.message_thread_id,
     date: Math.floor(Date.now() / 1000),
     document,
     caption,
     caption_entities: captionEntities,
-    reply_markup: replyMarkup,
+    reply_markup: body.reply_markup,
   });
 
   return ok(c, serializeMessage(msg, { store }));
