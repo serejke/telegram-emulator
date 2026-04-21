@@ -12,7 +12,7 @@ import {
   simulateUserMessage,
 } from "../routes/control.js";
 
-describe("Phase 2 - sendMessageDraft", () => {
+describe("sendMessageDraft", () => {
   let tx: TestApp;
   beforeEach(() => {
     tx = createTestApp({ seed: false });
@@ -83,7 +83,7 @@ describe("Phase 2 - sendMessageDraft", () => {
   });
 });
 
-describe("Phase 2 - editMessageText", () => {
+describe("editMessageText", () => {
   let tx: TestApp;
   beforeEach(() => {
     tx = createTestApp({ seed: false });
@@ -134,7 +134,7 @@ describe("Phase 2 - editMessageText", () => {
   });
 });
 
-describe("Phase 2 - deleteMessage", () => {
+describe("deleteMessage", () => {
   let tx: TestApp;
   beforeEach(() => {
     tx = createTestApp({ seed: false });
@@ -168,7 +168,7 @@ describe("Phase 2 - deleteMessage", () => {
   });
 });
 
-describe("Phase 2 - sendDocument", () => {
+describe("sendDocument", () => {
   let tx: TestApp;
   beforeEach(() => {
     tx = createTestApp({ seed: false });
@@ -216,7 +216,7 @@ describe("Phase 2 - sendDocument", () => {
   });
 });
 
-describe("Phase 2 - my_chat_member Update", () => {
+describe("my_chat_member Update", () => {
   let tx: TestApp;
   beforeEach(() => {
     tx = createTestApp({ seed: false });

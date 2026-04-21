@@ -1187,7 +1187,7 @@ function defaultMimeForKind(kind: MediaKind): string {
   }
 }
 
-// ---- Phase 2: editMessageText, deleteMessage, sendMessageDraft, sendDocument ----
+// ---- editMessageText / deleteMessage / sendMessageDraft / sendDocument ----
 
 function editMessageText(
   c: Context,
