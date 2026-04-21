@@ -1,0 +1,1127 @@
+import type { Context } from "hono";
+import type { RouteContext, Store } from "@emulators/core";
+import { getTelegramStore } from "../store.js";
+import {
+  buildPhotoSizes,
+  generateBotToken,
+  generateCallbackQueryId,
+  nextBotId,
+  nextFileId,
+  nextUserId,
+  parseEntities,
+  parseTelegramBody,
+  serializeBotAsUser,
+  serializeChat,
+  serializeMessage,
+  serializeUser,
+} from "../helpers.js";
+import { getDispatcher } from "../dispatcher.js";
+import type { InlineKeyboardMarkup, MessageEntity, TelegramBot, TelegramChat, TelegramUser } from "../entities.js";
+
+// Chat ID conventions (match real Telegram):
+//   private:    positive numbers equal to user_id
+//   group:      negative numbers
+//   supergroup: negative -100xxx range
+//   channel:    negative -100xxx range (distinct allocator)
+let nextGroupChatId = -1000000000;
+let nextSupergroupChatId = -1001000000000;
+let nextChannelChatId = -1002000000000;
+
+function allocateGroupChatId(): number {
+  nextGroupChatId -= 1;
+  return nextGroupChatId;
+}
+
+function allocateSupergroupChatId(): number {
+  nextSupergroupChatId -= 1;
+  return nextSupergroupChatId;
+}
+
+function allocateChannelChatId(): number {
+  nextChannelChatId -= 1;
+  return nextChannelChatId;
+}
+
+function allocatePrivateChatId(userId: number): number {
+  return userId;
+}
+
+export function resetControlCounters(): void {
+  nextGroupChatId = -1000000000;
+  nextSupergroupChatId = -1001000000000;
+  nextChannelChatId = -1002000000000;
+}
+
+export interface CreateBotInput {
+  username: string;
+  name?: string;
+  first_name?: string;
+  can_join_groups?: boolean;
+  can_read_all_group_messages?: boolean;
+  commands?: Array<{ command: string; description: string }>;
+  token?: string;
+}
+
+export interface CreateUserInput {
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  language_code?: string;
+}
+
+export interface CreatePrivateChatInput {
+  botId: number;
+  userId: number;
+}
+
+export interface CreateGroupChatInput {
+  title: string;
+  type?: "group" | "supergroup";
+  memberIds: number[];
+  botIds: number[];
+}
+
+export function createBot(store: Store, input: CreateBotInput): TelegramBot {
+  const ts = getTelegramStore(store);
+  const existingByUsername = ts.bots.findOneBy("username", input.username);
+  if (existingByUsername) return existingByUsername;
+
+  const bot_id = nextBotId();
+  const token = input.token ?? generateBotToken(bot_id);
+  return ts.bots.insert({
+    bot_id,
+    token,
+    username: input.username,
+    first_name: input.first_name ?? input.name ?? input.username,
+    can_join_groups: input.can_join_groups ?? true,
+    can_read_all_group_messages: input.can_read_all_group_messages ?? false,
+    supports_inline_queries: false,
+    webhook_url: null,
+    webhook_secret: null,
+    webhook_allowed_updates: null,
+    commands: input.commands ?? [],
+  });
+}
+
+export function createUser(store: Store, input: CreateUserInput): TelegramUser {
+  const ts = getTelegramStore(store);
+  if (input.username) {
+    const existing = ts.users.findOneBy("username", input.username);
+    if (existing) return existing;
+  }
+  const user_id = nextUserId();
+  return ts.users.insert({
+    user_id,
+    is_bot: false,
+    first_name: input.first_name,
+    last_name: input.last_name,
+    username: input.username,
+    language_code: input.language_code,
+  });
+}
+
+export function createPrivateChat(store: Store, input: CreatePrivateChatInput): TelegramChat {
+  const ts = getTelegramStore(store);
+  const chatId = allocatePrivateChatId(input.userId);
+  const existing = ts.chats.findOneBy("chat_id", chatId);
+  if (existing) {
+    const updates: Partial<TelegramChat> = {};
+    if (!existing.member_bot_ids.includes(input.botId)) {
+      updates.member_bot_ids = [...existing.member_bot_ids, input.botId];
+    }
+    if (!existing.member_user_ids.includes(input.userId)) {
+      updates.member_user_ids = [...existing.member_user_ids, input.userId];
+    }
+    if (Object.keys(updates).length > 0) {
+      return ts.chats.update(existing.id, updates)!;
+    }
+    return existing;
+  }
+  const user = ts.users.findOneBy("user_id", input.userId);
+  return ts.chats.insert({
+    chat_id: chatId,
+    type: "private",
+    first_name: user?.first_name,
+    last_name: user?.last_name,
+    username: user?.username,
+    member_user_ids: [input.userId],
+    member_bot_ids: [input.botId],
+    next_message_id: 1,
+  });
+}
+
+export function createGroupChat(store: Store, input: CreateGroupChatInput): TelegramChat {
+  const ts = getTelegramStore(store);
+  const chatId = input.type === "supergroup" ? allocateSupergroupChatId() : allocateGroupChatId();
+  return ts.chats.insert({
+    chat_id: chatId,
+    type: input.type ?? "group",
+    title: input.title,
+    member_user_ids: [...input.memberIds],
+    member_bot_ids: [...input.botIds],
+    next_message_id: 1,
+  });
+}
+
+export interface CreateSupergroupInput {
+  title: string;
+  memberIds: number[];
+  botIds: number[];
+}
+
+export function createSupergroup(store: Store, input: CreateSupergroupInput): TelegramChat {
+  return createGroupChat(store, { ...input, type: "supergroup" });
+}
+
+export interface CreateChannelInput {
+  title: string;
+  username?: string;
+  memberBotIds: number[];
+  memberUserIds?: number[];
+}
+
+export function createChannel(store: Store, input: CreateChannelInput): TelegramChat {
+  const ts = getTelegramStore(store);
+  const chatId = allocateChannelChatId();
+  return ts.chats.insert({
+    chat_id: chatId,
+    type: "channel",
+    title: input.title,
+    username: input.username,
+    member_user_ids: input.memberUserIds ?? [],
+    member_bot_ids: [...input.memberBotIds],
+    next_message_id: 1,
+  });
+}
+
+export interface CreateForumTopicInput {
+  chatId: number;
+  name: string;
+}
+
+export function createForumTopic(
+  store: Store,
+  input: CreateForumTopicInput,
+): { message_thread_id: number; name: string } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  if (chat.type !== "supergroup") {
+    throw new Error(`forum topics require a supergroup; chat ${input.chatId} is ${chat.type}`);
+  }
+  const existing = ts.forumTopics.findBy("chat_id", input.chatId);
+  const maxId = existing.reduce((m, t) => Math.max(m, t.message_thread_id), 1);
+  const message_thread_id = maxId + 1;
+  ts.forumTopics.insert({
+    chat_id: input.chatId,
+    message_thread_id,
+    name: input.name,
+  });
+  return { message_thread_id, name: input.name };
+}
+
+export interface SimulateChannelPostInput {
+  chatId: number;
+  text?: string;
+  entities?: import("../entities.js").MessageEntity[];
+  caption?: string;
+  photoBytes?: Buffer;
+  replyToMessageId?: number;
+  messageThreadId?: number;
+  edited?: boolean;
+  existingMessageId?: number;
+}
+
+export function simulateChannelPost(
+  store: Store,
+  input: SimulateChannelPostInput,
+): { message_id: number; update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  if (chat.type !== "channel") {
+    throw new Error(`simulateChannelPost requires a channel; chat ${input.chatId} is ${chat.type}`);
+  }
+
+  let msg: import("../entities.js").TelegramMessage;
+  if (input.edited) {
+    if (input.existingMessageId === undefined) throw new Error("existingMessageId required for edited post");
+    const existing = ts.messages
+      .findBy("chat_id", input.chatId)
+      .find((m) => m.message_id === input.existingMessageId);
+    if (!existing) throw new Error(`message ${input.existingMessageId} not found`);
+    ts.messages.update(existing.id, {
+      text: input.text,
+      entities: input.entities,
+      caption: input.caption,
+      edited_date: Math.floor(Date.now() / 1000),
+    });
+    msg = ts.messages.get(existing.id)!;
+  } else {
+    const messageId = chat.next_message_id;
+    ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+    msg = ts.messages.insert({
+      message_id: messageId,
+      chat_id: chat.chat_id,
+      from_user_id: null,
+      from_bot_id: null,
+      sender_chat_id: chat.chat_id,
+      message_thread_id: input.messageThreadId,
+      date: Math.floor(Date.now() / 1000),
+      text: input.text,
+      entities: input.entities,
+      caption: input.caption,
+      reply_to_message_id: input.replyToMessageId,
+    });
+  }
+
+  const dispatcher = getDispatcher(store);
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const payload = serializeMessage(msg, { store });
+    const type = input.edited ? ("edited_channel_post" as const) : ("channel_post" as const);
+    const upd = dispatcher.enqueue(botId, type, payload);
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+
+  return { message_id: msg.message_id, update_id: firstUpdateId };
+}
+
+export interface InjectFaultInput {
+  botId: number;
+  method: string;
+  error_code: number;
+  description?: string;
+  retry_after?: number;
+  count?: number;
+}
+
+export function injectFault(
+  store: Store,
+  input: InjectFaultInput,
+): { fault_id: number } {
+  const ts = getTelegramStore(store);
+  const row = ts.faults.insert({
+    bot_id: input.botId,
+    method: input.method,
+    error_code: input.error_code,
+    description:
+      input.description ??
+      (input.error_code === 429
+        ? `Too Many Requests: retry after ${input.retry_after ?? 1}`
+        : input.error_code === 401
+          ? "Unauthorized"
+          : input.error_code === 403
+            ? "Forbidden"
+            : input.error_code === 404
+              ? "Not Found"
+              : `Bad Request: injected fault ${input.error_code}`),
+    retry_after: input.retry_after ?? null,
+    remaining: Math.max(1, input.count ?? 1),
+  });
+  return { fault_id: row.id };
+}
+
+export function clearFaults(store: Store): void {
+  const ts = getTelegramStore(store);
+  for (const f of ts.faults.all()) ts.faults.delete(f.id);
+}
+
+export function getCallbackAnswer(
+  store: Store,
+  id: string,
+): {
+  callback_query_id: string;
+  answered: boolean;
+  answer_text?: string;
+  answer_show_alert?: boolean;
+  answer_url?: string;
+  answer_cache_time?: number;
+} | null {
+  const ts = getTelegramStore(store);
+  const row = ts.callbackQueries.findOneBy("callback_query_id", id);
+  if (!row) return null;
+  return {
+    callback_query_id: row.callback_query_id,
+    answered: row.answered,
+    answer_text: row.answer_text,
+    answer_show_alert: row.answer_show_alert,
+    answer_url: row.answer_url,
+    answer_cache_time: row.answer_cache_time,
+  };
+}
+
+export interface SimulateUserMediaInput {
+  chatId: number;
+  userId: number;
+  kind: "photo" | "video" | "audio" | "voice" | "animation" | "sticker" | "document";
+  bytes: Buffer;
+  mimeType?: string;
+  caption?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  fileName?: string;
+  messageThreadId?: number;
+}
+
+export function simulateUserMedia(
+  store: Store,
+  input: SimulateUserMediaInput,
+): { message_id: number; update_id: number; file_id: string } {
+  if (input.kind === "photo") {
+    return simulateUserPhoto(store, {
+      chatId: input.chatId,
+      userId: input.userId,
+      photoBytes: input.bytes,
+      mimeType: input.mimeType,
+      caption: input.caption,
+    });
+  }
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  if (!chat.member_user_ids.includes(input.userId)) {
+    throw new Error(`user ${input.userId} is not a member of chat ${input.chatId}`);
+  }
+  const firstBotId = chat.member_bot_ids[0];
+  const ownerBot = firstBotId ?? 0;
+  const { file_id, file_unique_id } = nextFileIdForKind(ownerBot, input.chatId, input.kind);
+  ts.files.insert({
+    file_id,
+    file_unique_id,
+    owner_bot_id: firstBotId ?? null,
+    mime_type: input.mimeType ?? defaultMimeForMediaKind(input.kind),
+    file_size: input.bytes.length,
+    width: input.width ?? 0,
+    height: input.height ?? 0,
+    file_path: `${input.kind}s/${ownerBot}/${file_id}`,
+    bytes_base64: input.bytes.toString("base64"),
+    kind: input.kind,
+    file_name: input.fileName,
+    duration: input.duration,
+  });
+
+  const messageId = chat.next_message_id;
+  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+
+  const mediaField = buildMediaField(input, file_id, file_unique_id);
+  const msg = ts.messages.insert({
+    message_id: messageId,
+    chat_id: chat.chat_id,
+    from_user_id: input.userId,
+    from_bot_id: null,
+    sender_chat_id: null,
+    message_thread_id: input.messageThreadId,
+    date: Math.floor(Date.now() / 1000),
+    [input.kind]: mediaField,
+    caption: input.caption,
+  } as Parameters<typeof ts.messages.insert>[0]);
+
+  const dispatcher = getDispatcher(store);
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const bot = ts.bots.findOneBy("bot_id", botId);
+    if (!bot) continue;
+    if (chat.type !== "private" && !bot.can_read_all_group_messages) continue;
+    const upd = dispatcher.enqueue(botId, "message", serializeMessage(msg, { store }));
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+
+  return { message_id: msg.message_id, update_id: firstUpdateId, file_id };
+}
+
+function nextFileIdForKind(botId: number, chatId: number, kind: string): { file_id: string; file_unique_id: string } {
+  return nextFileId(botId, chatId, kind[0]);
+}
+
+function defaultMimeForMediaKind(kind: string): string {
+  switch (kind) {
+    case "video":
+      return "video/mp4";
+    case "audio":
+      return "audio/mpeg";
+    case "voice":
+      return "audio/ogg";
+    case "animation":
+      return "video/mp4";
+    case "sticker":
+      return "image/webp";
+    case "document":
+      return "application/octet-stream";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function buildMediaField(
+  input: SimulateUserMediaInput,
+  file_id: string,
+  file_unique_id: string,
+): Record<string, unknown> {
+  const base: Record<string, unknown> = { file_id, file_unique_id, file_size: input.bytes.length };
+  switch (input.kind) {
+    case "video":
+    case "animation":
+      return {
+        ...base,
+        width: input.width ?? 0,
+        height: input.height ?? 0,
+        duration: input.duration ?? 0,
+        mime_type: input.mimeType,
+        file_name: input.fileName,
+      };
+    case "audio":
+      return {
+        ...base,
+        duration: input.duration ?? 0,
+        mime_type: input.mimeType,
+        file_name: input.fileName,
+      };
+    case "voice":
+      return {
+        ...base,
+        duration: input.duration ?? 0,
+        mime_type: input.mimeType,
+      };
+    case "sticker":
+      return {
+        ...base,
+        width: input.width ?? 0,
+        height: input.height ?? 0,
+        is_animated: false,
+        is_video: false,
+      };
+    case "document":
+      return {
+        ...base,
+        file_name: input.fileName,
+        mime_type: input.mimeType,
+      };
+    default:
+      return base;
+  }
+}
+
+export interface SimulateUserMessageInput {
+  chatId: number;
+  userId: number;
+  text: string;
+  replyToMessageId?: number;
+  messageThreadId?: number;
+}
+
+export function simulateUserMessage(store: Store, input: SimulateUserMessageInput): {
+  message_id: number;
+  update_id: number;
+} {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  if (!chat.member_user_ids.includes(input.userId)) {
+    throw new Error(`user ${input.userId} is not a member of chat ${input.chatId}`);
+  }
+
+  const entities = parseEntities(input.text);
+
+  const messageId = chat.next_message_id;
+  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+
+  const msg = ts.messages.insert({
+    message_id: messageId,
+    chat_id: chat.chat_id,
+    from_user_id: input.userId,
+    from_bot_id: null,
+    sender_chat_id: null,
+    message_thread_id: input.messageThreadId,
+    date: Math.floor(Date.now() / 1000),
+    text: input.text,
+    entities,
+    reply_to_message_id: input.replyToMessageId,
+  });
+
+  // Dispatch an Update to every bot in the chat, subject to Telegram's
+  // privacy rules for groups: bots only see messages that mention them or
+  // start with a command addressed to them, unless can_read_all_group_messages.
+  const dispatcher = getDispatcher(store);
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const bot = ts.bots.findOneBy("bot_id", botId);
+    if (!bot) continue;
+    if (chat.type !== "private" && !shouldBotSeeGroupMessage(input.text, entities, bot)) {
+      continue;
+    }
+    const upd = dispatcher.enqueue(botId, "message", serializeMessage(msg, { store }));
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+
+  return { message_id: msg.message_id, update_id: firstUpdateId };
+}
+
+function shouldBotSeeGroupMessage(text: string, entities: MessageEntity[], bot: TelegramBot): boolean {
+  if (bot.can_read_all_group_messages) return true;
+  for (const e of entities) {
+    const chunk = text.slice(e.offset, e.offset + e.length);
+    if (e.type === "mention" && chunk.toLowerCase() === `@${bot.username.toLowerCase()}`) return true;
+    if (e.type === "bot_command") {
+      if (!chunk.includes("@")) return true; // plain /command is delivered to all bots
+      if (chunk.toLowerCase().endsWith(`@${bot.username.toLowerCase()}`)) return true;
+    }
+  }
+  return false;
+}
+
+export interface SimulateUserPhotoInput {
+  chatId: number;
+  userId: number;
+  photoBytes: Buffer;
+  mimeType?: string;
+  caption?: string;
+}
+
+export function simulateUserPhoto(
+  store: Store,
+  input: SimulateUserPhotoInput,
+): { message_id: number; update_id: number; file_id: string } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  if (!chat.member_user_ids.includes(input.userId)) {
+    throw new Error(`user ${input.userId} is not a member of chat ${input.chatId}`);
+  }
+
+  // Attribute uploaded photos to an "owner bot" scope for file_id — use the
+  // first bot in the chat so getFile works for any bot that sees the message.
+  const firstBotId = chat.member_bot_ids[0];
+  if (firstBotId === undefined) {
+    throw new Error(`chat ${input.chatId} has no bots to receive the photo`);
+  }
+
+  const { sizes } = buildPhotoSizes(input.photoBytes, firstBotId, input.chatId);
+  const photoSizesJson = JSON.stringify(sizes);
+  for (const size of sizes) {
+    ts.files.insert({
+      file_id: size.file_id,
+      file_unique_id: size.file_unique_id,
+      owner_bot_id: firstBotId,
+      mime_type: input.mimeType ?? "image/jpeg",
+      file_size: input.photoBytes.length,
+      width: size.width,
+      height: size.height,
+      file_path: `photos/${firstBotId}/${size.file_id}`,
+      bytes_base64: input.photoBytes.toString("base64"),
+      kind: "photo" as const,
+      photo_sizes_json: photoSizesJson,
+    });
+  }
+
+  const messageId = chat.next_message_id;
+  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+
+  const msg = ts.messages.insert({
+    message_id: messageId,
+    chat_id: chat.chat_id,
+    from_user_id: input.userId,
+    from_bot_id: null,
+    sender_chat_id: null,
+    date: Math.floor(Date.now() / 1000),
+    photo: sizes,
+    caption: input.caption,
+  });
+
+  const dispatcher = getDispatcher(store);
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const bot = ts.bots.findOneBy("bot_id", botId);
+    if (!bot) continue;
+    if (chat.type !== "private" && !bot.can_read_all_group_messages) {
+      // Per Telegram privacy rules, non-privileged bots do not see plain media in groups.
+      continue;
+    }
+    const upd = dispatcher.enqueue(botId, "message", serializeMessage(msg, { store }));
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+
+  return { message_id: msg.message_id, update_id: firstUpdateId, file_id: sizes[sizes.length - 1].file_id };
+}
+
+export interface SimulateCallbackInput {
+  chatId: number;
+  userId: number;
+  messageId: number;
+  callbackData: string;
+}
+
+export function simulateCallback(
+  store: Store,
+  input: SimulateCallbackInput,
+): { callback_query_id: string; update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const msg = ts.messages.findBy("chat_id", input.chatId).find((m) => m.message_id === input.messageId);
+  if (!msg) throw new Error(`message ${input.messageId} in chat ${input.chatId} not found`);
+  const botId = msg.from_bot_id;
+  if (botId === null) throw new Error(`message ${input.messageId} was not sent by a bot`);
+
+  const id = generateCallbackQueryId();
+  ts.callbackQueries.insert({
+    callback_query_id: id,
+    from_user_id: input.userId,
+    message_id: input.messageId,
+    chat_id: input.chatId,
+    data: input.callbackData,
+    answered: false,
+  });
+
+  const user = ts.users.findOneBy("user_id", input.userId);
+  if (!user) throw new Error(`user ${input.userId} not found`);
+
+  const dispatcher = getDispatcher(store);
+  const payload = {
+    id,
+    from: serializeUser(user),
+    chat_instance: String(input.chatId),
+    message: serializeMessage(msg, { store }),
+    data: input.callbackData,
+  };
+  const upd = dispatcher.enqueue(botId, "callback_query", payload);
+  return { callback_query_id: id, update_id: upd.update_id };
+}
+
+export function addBotToChat(
+  store: Store,
+  input: { chatId: number; botId: number; byUserId: number },
+): { update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const bot = ts.bots.findOneBy("bot_id", input.botId);
+  if (!bot) throw new Error(`bot ${input.botId} not found`);
+  const by = ts.users.findOneBy("user_id", input.byUserId);
+  if (!by) throw new Error(`user ${input.byUserId} not found`);
+
+  if (chat.member_bot_ids.includes(input.botId)) {
+    return { update_id: 0 };
+  }
+  ts.chats.update(chat.id, { member_bot_ids: [...chat.member_bot_ids, input.botId] });
+
+  const dispatcher = getDispatcher(store);
+  const payload = {
+    chat: serializeChat(chat),
+    from: serializeUser(by),
+    date: Math.floor(Date.now() / 1000),
+    old_chat_member: { status: "left", user: serializeBotAsUser(bot) },
+    new_chat_member: { status: "member", user: serializeBotAsUser(bot) },
+  };
+  const upd = dispatcher.enqueue(input.botId, "my_chat_member", payload);
+  return { update_id: upd.update_id };
+}
+
+export function removeBotFromChat(
+  store: Store,
+  input: { chatId: number; botId: number; byUserId: number },
+): { update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const bot = ts.bots.findOneBy("bot_id", input.botId);
+  if (!bot) throw new Error(`bot ${input.botId} not found`);
+  const by = ts.users.findOneBy("user_id", input.byUserId);
+  if (!by) throw new Error(`user ${input.byUserId} not found`);
+
+  if (!chat.member_bot_ids.includes(input.botId)) {
+    return { update_id: 0 };
+  }
+  ts.chats.update(chat.id, {
+    member_bot_ids: chat.member_bot_ids.filter((id) => id !== input.botId),
+  });
+
+  const dispatcher = getDispatcher(store);
+  const payload = {
+    chat: serializeChat(chat),
+    from: serializeUser(by),
+    date: Math.floor(Date.now() / 1000),
+    old_chat_member: { status: "member", user: serializeBotAsUser(bot) },
+    new_chat_member: { status: "left", user: serializeBotAsUser(bot) },
+  };
+  const upd = dispatcher.enqueue(input.botId, "my_chat_member", payload);
+  return { update_id: upd.update_id };
+}
+
+export interface SimulateReactionInput {
+  chatId: number;
+  messageId: number;
+  userId: number;
+  reaction: Array<{ type: "emoji"; emoji: string } | { type: "custom_emoji"; custom_emoji_id: string }>;
+}
+
+export function simulateReaction(
+  store: Store,
+  input: SimulateReactionInput,
+): { update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const msg = ts.messages.findBy("chat_id", input.chatId).find((m) => m.message_id === input.messageId);
+  if (!msg) throw new Error(`message ${input.messageId} not found`);
+  const user = ts.users.findOneBy("user_id", input.userId);
+  if (!user) throw new Error(`user ${input.userId} not found`);
+
+  // Upsert this user's reaction row
+  const existing = ts.reactions
+    .all()
+    .find((r) => r.chat_id === input.chatId && r.message_id === input.messageId && r.sender_user_id === input.userId);
+  const old_reaction = existing?.reaction ?? [];
+  if (input.reaction.length === 0) {
+    if (existing) ts.reactions.delete(existing.id);
+  } else if (existing) {
+    ts.reactions.update(existing.id, { reaction: input.reaction });
+  } else {
+    ts.reactions.insert({
+      chat_id: input.chatId,
+      message_id: input.messageId,
+      sender_user_id: input.userId,
+      sender_bot_id: null,
+      reaction: input.reaction,
+    });
+  }
+
+  // Dispatch message_reaction to all bots in the chat.
+  const dispatcher = getDispatcher(store);
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const bot = ts.bots.findOneBy("bot_id", botId);
+    if (!bot) continue;
+    const payload = {
+      chat: serializeChat(chat),
+      message_id: input.messageId,
+      user: serializeUser(user),
+      date: Math.floor(Date.now() / 1000),
+      old_reaction,
+      new_reaction: input.reaction,
+    };
+    const upd = dispatcher.enqueue(botId, "message_reaction", payload);
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+
+  return { update_id: firstUpdateId };
+}
+
+export function getDraftHistory(
+  store: Store,
+  input: { chatId: number; draftId: number; botId?: number },
+): Array<{ seq: number; text: string; entities?: unknown[]; bot_id: number }> {
+  const ts = getTelegramStore(store);
+  return ts.draftSnapshots
+    .findBy("chat_id", input.chatId)
+    .filter((s) => s.draft_id === input.draftId && (input.botId === undefined || s.bot_id === input.botId))
+    .sort((a, b) => a.seq - b.seq)
+    .map((s) => ({ seq: s.seq, text: s.text, entities: s.entities, bot_id: s.bot_id }));
+}
+
+export function simulateEditedUserMessage(
+  store: Store,
+  input: { chatId: number; messageId: number; userId: number; text: string; messageThreadId?: number },
+): { update_id: number } {
+  const ts = getTelegramStore(store);
+  const chat = ts.chats.findOneBy("chat_id", input.chatId);
+  if (!chat) throw new Error(`chat ${input.chatId} not found`);
+  const msg = ts.messages.findBy("chat_id", input.chatId).find((m) => m.message_id === input.messageId);
+  if (!msg) throw new Error(`message ${input.messageId} not found`);
+  if (msg.from_user_id !== input.userId) throw new Error("cannot edit message from another user");
+  const entities = parseEntities(input.text);
+  ts.messages.update(msg.id, { text: input.text, entities, edited_date: Math.floor(Date.now() / 1000) });
+
+  const dispatcher = getDispatcher(store);
+  const updated = ts.messages.get(msg.id)!;
+  let firstUpdateId = 0;
+  for (const botId of chat.member_bot_ids) {
+    const bot = ts.bots.findOneBy("bot_id", botId);
+    if (!bot) continue;
+    if (chat.type !== "private" && !shouldBotSeeGroupMessage(input.text, entities, bot)) continue;
+    const upd = dispatcher.enqueue(botId, "edited_message", serializeMessage(updated, { store }));
+    if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+  }
+  return { update_id: firstUpdateId };
+}
+
+export function getSentMessages(store: Store, chatId: number): Record<string, unknown>[] {
+  const ts = getTelegramStore(store);
+  return ts.messages
+    .findBy("chat_id", chatId)
+    .filter((m) => m.from_bot_id !== null && !m.deleted)
+    .sort((a, b) => a.message_id - b.message_id)
+    .map((m) => serializeMessage(m, { store }));
+}
+
+export function getAllMessages(store: Store, chatId: number): Record<string, unknown>[] {
+  const ts = getTelegramStore(store);
+  return ts.messages
+    .findBy("chat_id", chatId)
+    .filter((m) => !m.deleted)
+    .sort((a, b) => a.message_id - b.message_id)
+    .map((m) => serializeMessage(m, { store }));
+}
+
+export function controlRoutes(ctx: RouteContext): void {
+  const { app, store } = ctx;
+
+  app.post("/_emu/telegram/reset", (c: Context) => {
+    store.reset();
+    return c.json({ ok: true });
+  });
+
+  app.post("/_emu/telegram/bots", async (c) => {
+    const body = await parseTelegramBody(c);
+    const bot = createBot(store, body as unknown as CreateBotInput);
+    return c.json({ ok: true, bot: toBotDto(bot) });
+  });
+
+  app.get("/_emu/telegram/bots", (c) => {
+    const ts = getTelegramStore(store);
+    return c.json({ ok: true, bots: ts.bots.all().map(toBotDto) });
+  });
+
+  app.post("/_emu/telegram/users", async (c) => {
+    const body = await parseTelegramBody(c);
+    const user = createUser(store, body as unknown as CreateUserInput);
+    return c.json({ ok: true, user: serializeUser(user) });
+  });
+
+  app.post("/_emu/telegram/chats/private", async (c) => {
+    const body = await parseTelegramBody(c);
+    const chat = createPrivateChat(store, body as unknown as CreatePrivateChatInput);
+    return c.json({ ok: true, chat: serializeChat(chat) });
+  });
+
+  app.post("/_emu/telegram/chats/group", async (c) => {
+    const body = await parseTelegramBody(c);
+    const chat = createGroupChat(store, body as unknown as CreateGroupChatInput);
+    return c.json({ ok: true, chat: serializeChat(chat) });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/messages", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = simulateUserMessage(store, {
+      chatId,
+      userId: Number(body.userId),
+      text: String(body.text ?? ""),
+      replyToMessageId: body.replyToMessageId as number | undefined,
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/photos", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const photoBytes =
+      body.photoBase64 !== undefined
+        ? Buffer.from(String(body.photoBase64), "base64")
+        : (body.photo as { bytes: Buffer } | undefined)?.bytes;
+    if (!photoBytes) {
+      return c.json({ ok: false, error: "photoBase64 or multipart photo required" }, 400);
+    }
+    const result = simulateUserPhoto(store, {
+      chatId,
+      userId: Number(body.userId),
+      photoBytes,
+      mimeType: body.mimeType as string | undefined,
+      caption: body.caption as string | undefined,
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/callbacks", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = simulateCallback(store, {
+      chatId,
+      userId: Number(body.userId),
+      messageId: Number(body.messageId),
+      callbackData: String(body.data ?? body.callbackData ?? ""),
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/edits", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = simulateEditedUserMessage(store, {
+      chatId,
+      messageId: Number(body.messageId),
+      userId: Number(body.userId),
+      text: String(body.text ?? ""),
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.get("/_emu/telegram/chats/:chatId/messages", (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const scope = c.req.query("scope") ?? "all";
+    const items = scope === "bot" ? getSentMessages(store, chatId) : getAllMessages(store, chatId);
+    return c.json({ ok: true, messages: items });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/add-bot", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = addBotToChat(store, {
+      chatId,
+      botId: Number(body.botId),
+      byUserId: Number(body.byUserId),
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/remove-bot", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = removeBotFromChat(store, {
+      chatId,
+      botId: Number(body.botId),
+      byUserId: Number(body.byUserId),
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/reactions", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = simulateReaction(store, {
+      chatId,
+      messageId: Number(body.messageId),
+      userId: Number(body.userId),
+      reaction: Array.isArray(body.reaction)
+        ? (body.reaction as SimulateReactionInput["reaction"])
+        : [],
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.get("/_emu/telegram/chats/:chatId/drafts/:draftId", (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const draftId = Number(c.req.param("draftId"));
+    const snapshots = getDraftHistory(store, { chatId, draftId });
+    return c.json({ ok: true, snapshots });
+  });
+
+  app.post("/_emu/telegram/chats/channel", async (c) => {
+    const body = await parseTelegramBody(c);
+    const chat = createChannel(store, body as unknown as CreateChannelInput);
+    return c.json({ ok: true, chat: serializeChat(chat) });
+  });
+
+  app.post("/_emu/telegram/chats/supergroup", async (c) => {
+    const body = await parseTelegramBody(c);
+    const chat = createSupergroup(store, body as unknown as CreateSupergroupInput);
+    return c.json({ ok: true, chat: serializeChat(chat) });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/topics", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = createForumTopic(store, { chatId, name: String(body.name ?? "") });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/channel-posts", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const photoBytes =
+      body.photo_bytes_base64 !== undefined
+        ? Buffer.from(String(body.photo_bytes_base64), "base64")
+        : undefined;
+    const result = simulateChannelPost(store, {
+      chatId,
+      text: body.text as string | undefined,
+      entities: body.entities as SimulateChannelPostInput["entities"],
+      caption: body.caption as string | undefined,
+      photoBytes,
+      replyToMessageId: body.reply_to_message_id as number | undefined,
+      messageThreadId: body.message_thread_id as number | undefined,
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/channel-post-edits", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const result = simulateChannelPost(store, {
+      chatId,
+      text: body.text as string | undefined,
+      caption: body.caption as string | undefined,
+      edited: true,
+      existingMessageId: Number(body.messageId),
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/chats/:chatId/media", async (c) => {
+    const chatId = Number(c.req.param("chatId"));
+    const body = await parseTelegramBody(c);
+    const bytes =
+      body.bytesBase64 !== undefined
+        ? Buffer.from(String(body.bytesBase64), "base64")
+        : (body.file as { bytes: Buffer } | undefined)?.bytes;
+    if (!bytes) return c.json({ ok: false, error: "bytesBase64 or file required" }, 400);
+    const result = simulateUserMedia(store, {
+      chatId,
+      userId: Number(body.userId),
+      kind: body.kind as SimulateUserMediaInput["kind"],
+      bytes,
+      mimeType: body.mimeType as string | undefined,
+      caption: body.caption as string | undefined,
+      duration: body.duration as number | undefined,
+      width: body.width as number | undefined,
+      height: body.height as number | undefined,
+      fileName: body.fileName as string | undefined,
+      messageThreadId: body.messageThreadId as number | undefined,
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.post("/_emu/telegram/faults", async (c) => {
+    const body = await parseTelegramBody(c);
+    const result = injectFault(store, {
+      botId: Number(body.bot_id ?? body.botId),
+      method: String(body.method ?? "*"),
+      error_code: Number(body.error_code ?? body.errorCode),
+      description: body.description as string | undefined,
+      retry_after: body.retry_after as number | undefined,
+      count: body.count as number | undefined,
+    });
+    return c.json({ ok: true, ...result });
+  });
+
+  app.delete("/_emu/telegram/faults", (c) => {
+    clearFaults(store);
+    return c.json({ ok: true });
+  });
+
+  app.get("/_emu/telegram/callbacks/:id", (c) => {
+    const id = c.req.param("id") ?? "";
+    const answer = getCallbackAnswer(store, id);
+    if (!answer) return c.json({ ok: false, error: "callback_query not found" }, 404);
+    return c.json({ ok: true, ...answer });
+  });
+}
+
+function toBotDto(bot: TelegramBot) {
+  return {
+    bot_id: bot.bot_id,
+    token: bot.token,
+    username: bot.username,
+    first_name: bot.first_name,
+    webhook_url: bot.webhook_url,
+    commands: bot.commands,
+  };
+}
+
+// Re-export for tests
+export function registerInlineKeyboardMarkup(
+  markup: InlineKeyboardMarkup,
+): InlineKeyboardMarkup {
+  return markup;
+}
