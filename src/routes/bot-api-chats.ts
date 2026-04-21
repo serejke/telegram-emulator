@@ -5,17 +5,21 @@ import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
 import { serializeBotAsUser, serializeChatFullInfo, serializeUser } from "../serializers.js";
+import { parseWithSchema } from "../types/validators/body.js";
+import {
+  zGetChatAdministratorsBody,
+  zGetChatBody,
+  zGetChatMemberBody,
+  zGetChatMemberCountBody,
+} from "../types/validators/chats.js";
 import type { TelegramChat } from "../entities.js";
-import type { WireBotAsUser, WireUser } from "../types/wire/index.js";
-
-function coerceChatId(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && /^-?\d+$/.test(v)) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
+import type {
+  WireBotAsUser,
+  WireChatMember,
+  WireChatMemberAdministrator,
+  WireChatMemberOwner,
+  WireUser,
+} from "../types/wire/index.js";
 
 type MemberStatus = "creator" | "administrator" | "member" | "left";
 
@@ -33,11 +37,17 @@ function chatMemberStatus(chat: TelegramChat, subjectId: number, isBot: boolean)
   return "member";
 }
 
-function adminMemberExtras(status: MemberStatus, chat: TelegramChat): Record<string, unknown> {
-  if (status !== "creator" && status !== "administrator") return {};
+function buildChatMember(
+  status: MemberStatus,
+  user: WireUser | WireBotAsUser,
+  chat: TelegramChat,
+): WireChatMember {
+  if (status === "left") return { status: "left", user };
+  if (status === "member") return { status: "member", user };
+
   const isForum = chat.type === "supergroup" && chat.is_forum === true;
-  return {
-    can_be_edited: status === "administrator",
+  const base = {
+    user,
     is_anonymous: false,
     can_manage_chat: true,
     can_delete_messages: true,
@@ -46,26 +56,47 @@ function adminMemberExtras(status: MemberStatus, chat: TelegramChat): Record<str
     can_promote_members: status === "creator",
     can_change_info: true,
     can_invite_users: true,
-    can_post_messages: chat.type === "channel" ? true : undefined,
-    can_edit_messages: chat.type === "channel" ? true : undefined,
-    can_pin_messages: chat.type !== "channel" ? true : undefined,
-    can_manage_topics: isForum ? true : undefined,
   };
+  const channelRights = chat.type === "channel"
+    ? { can_post_messages: true, can_edit_messages: true }
+    : { can_pin_messages: true };
+  const forumRights = isForum ? { can_manage_topics: true } : {};
+
+  if (status === "creator") {
+    const owner: WireChatMemberOwner = {
+      ...base,
+      ...channelRights,
+      ...forumRights,
+      status: "creator",
+      can_be_edited: false,
+    };
+    return owner;
+  }
+  const admin: WireChatMemberAdministrator = {
+    ...base,
+    ...channelRights,
+    ...forumRights,
+    status: "administrator",
+    can_be_edited: true,
+  };
+  return admin;
 }
 
-export function getChat(c: Context, body: Record<string, unknown>, store: Store) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+export function getChat(c: Context, raw: unknown, store: Store) {
+  const r = parseWithSchema(c, zGetChatBody, raw);
+  if (!r.ok) return r.response;
+
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", r.data.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   return ok(c, serializeChatFullInfo(chat, { store }));
 }
 
-export function getChatMember(c: Context, body: Record<string, unknown>, store: Store) {
-  const chatId = coerceChatId(body.chat_id);
-  const userId = typeof body.user_id === "number" ? (body.user_id as number) : null;
-  if (chatId === null || userId === null) return tgError(c, "Bad Request: chat_id and user_id are required");
+export function getChatMember(c: Context, raw: unknown, store: Store) {
+  const r = parseWithSchema(c, zGetChatMemberBody, raw);
+  if (!r.ok) return r.response;
+  const { chat_id: chatId, user_id: userId } = r.data;
+
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", chatId);
   if (!chat) return tgError(c, "Bad Request: chat not found");
@@ -80,53 +111,43 @@ export function getChatMember(c: Context, body: Record<string, unknown>, store: 
   if (!knownMember) return tgError(c, "Bad Request: user not found in chat");
 
   const status = chatMemberStatus(chat, userId, isBotSubject);
-  const userField = user ? serializeUser(user) : bot ? serializeBotAsUser(bot) : undefined;
-  const extras = adminMemberExtras(status, chat);
-  const out: Record<string, unknown> = { status, user: userField };
-  for (const [k, v] of Object.entries(extras)) {
-    if (v !== undefined) out[k] = v;
-  }
-  return ok(c, out);
+  const subject: WireUser | WireBotAsUser = user ? serializeUser(user) : serializeBotAsUser(bot!);
+  const member = buildChatMember(status, subject, chat);
+  return ok(c, member);
 }
 
-export function getChatAdministrators(c: Context, body: Record<string, unknown>, store: Store) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+export function getChatAdministrators(c: Context, raw: unknown, store: Store) {
+  const r = parseWithSchema(c, zGetChatAdministratorsBody, raw);
+  if (!r.ok) return r.response;
+
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", r.data.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
 
-  const admins: Record<string, unknown>[] = [];
-  const push = (status: "creator" | "administrator", subject: WireUser | WireBotAsUser) => {
-    const base: Record<string, unknown> = { status, user: subject };
-    const extras = adminMemberExtras(status, chat);
-    for (const [k, v] of Object.entries(extras)) {
-      if (v !== undefined) base[k] = v;
-    }
-    admins.push(base);
-  };
+  const admins: WireChatMember[] = [];
 
   if (chat.creator_user_id !== undefined) {
     const u = ts.users.findOneBy("user_id", chat.creator_user_id);
-    if (u) push("creator", serializeUser(u));
+    if (u) admins.push(buildChatMember("creator", serializeUser(u), chat));
   }
   for (const uid of chat.admin_user_ids ?? []) {
     if (uid === chat.creator_user_id) continue;
     const u = ts.users.findOneBy("user_id", uid);
-    if (u) push("administrator", serializeUser(u));
+    if (u) admins.push(buildChatMember("administrator", serializeUser(u), chat));
   }
   for (const bid of chat.admin_bot_ids ?? []) {
     const b = ts.bots.findOneBy("bot_id", bid);
-    if (b) push("administrator", serializeBotAsUser(b));
+    if (b) admins.push(buildChatMember("administrator", serializeBotAsUser(b), chat));
   }
   return okRaw(c, admins);
 }
 
-export function getChatMemberCount(c: Context, body: Record<string, unknown>, store: Store) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
+export function getChatMemberCount(c: Context, raw: unknown, store: Store) {
+  const r = parseWithSchema(c, zGetChatMemberCountBody, raw);
+  if (!r.ok) return r.response;
+
   const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
+  const chat = ts.chats.findOneBy("chat_id", r.data.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
   const count = chat.member_user_ids.length + chat.member_bot_ids.length;
   return c.json({ ok: true, result: count });

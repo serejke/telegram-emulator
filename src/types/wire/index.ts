@@ -5,3 +5,4 @@ export * from "./reaction.js";
 export * from "./user.js";
 export * from "./chat.js";
 export * from "./message.js";
+export * from "./chat-member.js";

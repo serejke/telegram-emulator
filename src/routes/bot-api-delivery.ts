@@ -5,6 +5,8 @@ import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
 import { getDispatcher } from "../dispatcher.js";
+import { parseWithSchema } from "../types/validators/body.js";
+import { zGetUpdatesBody, zSetWebhookBody } from "../types/validators/delivery.js";
 import type { TelegramBot } from "../entities.js";
 
 export function getMe(c: Context, bot: TelegramBot) {
@@ -22,21 +24,22 @@ export function getMe(c: Context, bot: TelegramBot) {
 export async function getUpdates(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   dispatcher: ReturnType<typeof getDispatcher>,
 ) {
-  const offset = typeof body.offset === "number" ? (body.offset as number) : undefined;
-  const limit = typeof body.limit === "number" ? Math.min(body.limit as number, 100) : 100;
-  const timeout = typeof body.timeout === "number" ? Math.min(body.timeout as number, 50) : 0;
-  const allowedUpdates = Array.isArray(body.allowed_updates)
-    ? (body.allowed_updates as string[])
-    : bot.webhook_allowed_updates ?? null;
+  const r = parseWithSchema(c, zGetUpdatesBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
+
+  const limit = body.limit !== undefined ? Math.min(body.limit, 100) : 100;
+  const timeout = body.timeout !== undefined ? Math.min(body.timeout, 50) : 0;
+  const allowedUpdates = body.allowed_updates ?? bot.webhook_allowed_updates ?? null;
 
   if (bot.webhook_url) {
     return tgError(c, "Conflict: can't use getUpdates method while webhook is active", 409, 409);
   }
 
-  const { cancelled, updates } = await dispatcher.getUpdates(bot.bot_id, offset, limit, timeout);
+  const { cancelled, updates } = await dispatcher.getUpdates(bot.bot_id, body.offset, limit, timeout);
   if (cancelled) {
     return tgError(
       c,
@@ -58,13 +61,14 @@ export async function getUpdates(
 export function setWebhook(
   c: Context,
   bot: TelegramBot,
-  body: Record<string, unknown>,
+  raw: unknown,
   store: Store,
 ) {
-  const url = typeof body.url === "string" ? (body.url as string) : "";
-  const secret = typeof body.secret_token === "string" ? (body.secret_token as string) : null;
-  const allowed = Array.isArray(body.allowed_updates) ? (body.allowed_updates as string[]) : null;
+  const r = parseWithSchema(c, zSetWebhookBody, raw);
+  if (!r.ok) return r.response;
+  const body = r.data;
 
+  const url = body.url ?? "";
   if (!url) {
     // Empty URL removes the webhook, matching real behaviour.
     return deleteWebhook(c, bot, store);
@@ -78,8 +82,8 @@ export function setWebhook(
   const ts = getTelegramStore(store);
   ts.bots.update(bot.id, {
     webhook_url: url,
-    webhook_secret: secret,
-    webhook_allowed_updates: allowed,
+    webhook_secret: body.secret_token ?? null,
+    webhook_allowed_updates: body.allowed_updates ?? null,
   });
   return okRaw(c, true);
 }
