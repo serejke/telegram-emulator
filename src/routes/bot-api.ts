@@ -20,6 +20,7 @@ import {
 import { getDispatcher } from "../dispatcher.js";
 import { MarkdownParseError, parseMarkdownV2 } from "../markdown.js";
 import { HtmlParseError, parseHtml } from "../html.js";
+import { allocateMessageId, buildMediaField } from "../services/media.js";
 import type {
   InlineKeyboardMarkup,
   MessageEntity,
@@ -325,8 +326,7 @@ function sendMessage(
     }
   }
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,
@@ -557,8 +557,7 @@ async function sendPhoto(
     return tgError(c, "Bad Request: photo must be a file_id string or multipart upload");
   }
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,
@@ -1001,8 +1000,7 @@ export function simulateInsertMessage(
   if (!chat.member_user_ids.includes(input.fromUserId)) {
     throw new Error(`user ${input.fromUserId} is not a member of chat ${input.chatId}`);
   }
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
   return ts.messages.insert({
     message_id: messageId,
     chat_id: chat.chat_id,
@@ -1143,78 +1141,24 @@ async function sendMediaMessage(
     return tgError(c, `Bad Request: ${kind} must be a file_id string or multipart upload`);
   }
 
-  let mediaField: Record<string, unknown> = { file_id, file_unique_id, file_size };
-  switch (kind) {
-    case "video": {
-      const video: TelegramVideo = {
-        file_id,
-        file_unique_id,
-        width,
-        height,
-        duration,
-        mime_type,
-        file_size,
-        file_name,
-      };
-      mediaField = video as unknown as Record<string, unknown>;
-      break;
-    }
-    case "audio": {
-      const audio: TelegramAudio = {
-        file_id,
-        file_unique_id,
-        duration,
-        performer: typeof body.performer === "string" ? (body.performer as string) : undefined,
-        title: typeof body.title === "string" ? (body.title as string) : undefined,
-        mime_type,
-        file_size,
-        file_name,
-      };
-      mediaField = audio as unknown as Record<string, unknown>;
-      break;
-    }
-    case "voice": {
-      const voice: TelegramVoice = {
-        file_id,
-        file_unique_id,
-        duration,
-        mime_type,
-        file_size,
-      };
-      mediaField = voice as unknown as Record<string, unknown>;
-      break;
-    }
-    case "animation": {
-      const anim: TelegramAnimation = {
-        file_id,
-        file_unique_id,
-        width,
-        height,
-        duration,
-        mime_type,
-        file_size,
-        file_name,
-      };
-      mediaField = anim as unknown as Record<string, unknown>;
-      break;
-    }
-    case "sticker": {
-      const sticker: TelegramSticker = {
-        file_id,
-        file_unique_id,
-        width,
-        height,
-        is_animated: Boolean(body.is_animated),
-        is_video: Boolean(body.is_video),
-        emoji: typeof body.emoji === "string" ? (body.emoji as string) : undefined,
-      };
-      mediaField = sticker as unknown as Record<string, unknown>;
-      break;
-    }
-  }
+  const mediaField = buildMediaField({
+    kind,
+    file_id,
+    file_unique_id,
+    file_size,
+    width,
+    height,
+    duration,
+    mime_type,
+    file_name,
+    performer: typeof body.performer === "string" ? (body.performer as string) : undefined,
+    title: typeof body.title === "string" ? (body.title as string) : undefined,
+    emoji: typeof body.emoji === "string" ? (body.emoji as string) : undefined,
+    is_animated: Boolean(body.is_animated),
+    is_video: Boolean(body.is_video),
+  });
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,
@@ -1442,8 +1386,7 @@ async function sendDocument(
     return tgError(c, "Bad Request: document must be a file_id string or multipart upload");
   }
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,

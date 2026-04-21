@@ -20,6 +20,11 @@ import {
 } from "../helpers.js";
 import { getDispatcher } from "../dispatcher.js";
 import { telegramPaths } from "../paths.js";
+import {
+  allocateMessageId,
+  buildMediaField as buildMediaFieldShared,
+  defaultMimeForMediaKind as defaultMimeForMediaKindShared,
+} from "../services/media.js";
 import type { InlineKeyboardMarkup, MessageEntity, TelegramBot, TelegramChat, TelegramUser } from "../entities.js";
 
 // Chat ID conventions (match real Telegram):
@@ -184,6 +189,10 @@ export interface CreateSupergroupInput {
   title: string;
   memberIds: number[];
   botIds: number[];
+  creatorUserId?: number;
+  adminUserIds?: number[];
+  adminBotIds?: number[];
+  isForum?: boolean;
 }
 
 export function createSupergroup(store: Store, input: CreateSupergroupInput): TelegramChat {
@@ -278,8 +287,7 @@ export function simulateChannelPost(
     });
     msg = ts.messages.get(existing.id)!;
   } else {
-    const messageId = chat.next_message_id;
-    ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+    const messageId = allocateMessageId(store, chat);
     msg = ts.messages.insert({
       message_id: messageId,
       chat_id: chat.chat_id,
@@ -411,7 +419,7 @@ export function simulateUserMedia(
     file_id,
     file_unique_id,
     owner_bot_id: firstBotId ?? null,
-    mime_type: input.mimeType ?? defaultMimeForMediaKind(input.kind),
+    mime_type: input.mimeType ?? defaultMimeForMediaKindShared(input.kind),
     file_size: input.bytes.length,
     width: input.width ?? 0,
     height: input.height ?? 0,
@@ -422,10 +430,19 @@ export function simulateUserMedia(
     duration: input.duration,
   });
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
-  const mediaField = buildMediaField(input, file_id, file_unique_id);
+  const mediaField = buildMediaFieldShared({
+    kind: input.kind,
+    file_id,
+    file_unique_id,
+    file_size: input.bytes.length,
+    width: input.width,
+    height: input.height,
+    duration: input.duration,
+    mime_type: input.mimeType,
+    file_name: input.fileName,
+  });
   const msg = ts.messages.insert({
     message_id: messageId,
     chat_id: chat.chat_id,
@@ -460,74 +477,6 @@ function nextFileIdForKind(
   return nextFileId(store, botId, chatId, kind[0]);
 }
 
-function defaultMimeForMediaKind(kind: string): string {
-  switch (kind) {
-    case "video":
-      return "video/mp4";
-    case "audio":
-      return "audio/mpeg";
-    case "voice":
-      return "audio/ogg";
-    case "animation":
-      return "video/mp4";
-    case "sticker":
-      return "image/webp";
-    case "document":
-      return "application/octet-stream";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-function buildMediaField(
-  input: SimulateUserMediaInput,
-  file_id: string,
-  file_unique_id: string,
-): Record<string, unknown> {
-  const base: Record<string, unknown> = { file_id, file_unique_id, file_size: input.bytes.length };
-  switch (input.kind) {
-    case "video":
-    case "animation":
-      return {
-        ...base,
-        width: input.width ?? 0,
-        height: input.height ?? 0,
-        duration: input.duration ?? 0,
-        mime_type: input.mimeType,
-        file_name: input.fileName,
-      };
-    case "audio":
-      return {
-        ...base,
-        duration: input.duration ?? 0,
-        mime_type: input.mimeType,
-        file_name: input.fileName,
-      };
-    case "voice":
-      return {
-        ...base,
-        duration: input.duration ?? 0,
-        mime_type: input.mimeType,
-      };
-    case "sticker":
-      return {
-        ...base,
-        width: input.width ?? 0,
-        height: input.height ?? 0,
-        is_animated: false,
-        is_video: false,
-      };
-    case "document":
-      return {
-        ...base,
-        file_name: input.fileName,
-        mime_type: input.mimeType,
-      };
-    default:
-      return base;
-  }
-}
-
 export interface SimulateUserMessageInput {
   chatId: number;
   userId: number;
@@ -549,8 +498,7 @@ export function simulateUserMessage(store: Store, input: SimulateUserMessageInpu
 
   const entities = parseEntities(input.text);
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,
@@ -644,8 +592,7 @@ export function simulateUserPhoto(
     });
   }
 
-  const messageId = chat.next_message_id;
-  ts.chats.update(chat.id, { next_message_id: messageId + 1 });
+  const messageId = allocateMessageId(store, chat);
 
   const msg = ts.messages.insert({
     message_id: messageId,
