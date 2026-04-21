@@ -22,7 +22,7 @@ describe("Telegram test client + in-process HTTP round-trip", () => {
   // @hono/node-server dependency.
   const makeClient = () =>
     createTelegramTestClient(baseUrl, {
-      fetchImpl: (input, init) => app.request(input, init),
+      fetchImpl: async (input, init) => app.request(input, init),
     });
 
   it("end-to-end: create bot, user, DM, send and receive text", async () => {
