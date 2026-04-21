@@ -19,6 +19,7 @@ import {
   serializeUser,
 } from "../helpers.js";
 import { getDispatcher } from "../dispatcher.js";
+import { telegramPaths } from "../paths.js";
 import type { InlineKeyboardMarkup, MessageEntity, TelegramBot, TelegramChat, TelegramUser } from "../entities.js";
 
 // Chat ID conventions (match real Telegram):
@@ -921,41 +922,41 @@ export function getAllMessages(store: Store, chatId: number): Record<string, unk
 export function controlRoutes(ctx: RouteContext): void {
   const { app, store } = ctx;
 
-  app.post("/_emu/telegram/reset", (c: Context) => {
+  app.post(telegramPaths.reset(), (c: Context) => {
     store.reset();
     return c.json({ ok: true });
   });
 
-  app.post("/_emu/telegram/bots", async (c) => {
+  app.post(telegramPaths.bots(), async (c) => {
     const body = await parseTelegramBody(c);
     const bot = createBot(store, body as unknown as CreateBotInput);
     return c.json({ ok: true, bot: toBotDto(bot) });
   });
 
-  app.get("/_emu/telegram/bots", (c) => {
+  app.get(telegramPaths.bots(), (c) => {
     const ts = getTelegramStore(store);
     return c.json({ ok: true, bots: ts.bots.all().map(toBotDto) });
   });
 
-  app.post("/_emu/telegram/users", async (c) => {
+  app.post(telegramPaths.users(), async (c) => {
     const body = await parseTelegramBody(c);
     const user = createUser(store, body as unknown as CreateUserInput);
     return c.json({ ok: true, user: serializeUser(user) });
   });
 
-  app.post("/_emu/telegram/chats/private", async (c) => {
+  app.post(telegramPaths.privateChat(), async (c) => {
     const body = await parseTelegramBody(c);
     const chat = createPrivateChat(store, body as unknown as CreatePrivateChatInput);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
-  app.post("/_emu/telegram/chats/group", async (c) => {
+  app.post(telegramPaths.groupChat(), async (c) => {
     const body = await parseTelegramBody(c);
     const chat = createGroupChat(store, body as unknown as CreateGroupChatInput);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/promote", async (c) => {
+  app.post(telegramPaths.chatPromote(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const chat = promoteChatMember(store, {
@@ -967,7 +968,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/messages", async (c) => {
+  app.post(telegramPaths.chatMessages(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = simulateUserMessage(store, {
@@ -979,7 +980,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/photos", async (c) => {
+  app.post(telegramPaths.chatPhotos(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const photoBytes =
@@ -999,7 +1000,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/callbacks", async (c) => {
+  app.post(telegramPaths.chatCallbacks(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = simulateCallback(store, {
@@ -1011,7 +1012,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/edits", async (c) => {
+  app.post(telegramPaths.chatEdits(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = simulateEditedUserMessage(store, {
@@ -1023,14 +1024,14 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.get("/_emu/telegram/chats/:chatId/messages", (c) => {
+  app.get(telegramPaths.chatMessages(":chatId"), (c) => {
     const chatId = Number(c.req.param("chatId"));
     const scope = c.req.query("scope") ?? "all";
     const items = scope === "bot" ? getSentMessages(store, chatId) : getAllMessages(store, chatId);
     return c.json({ ok: true, messages: items });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/add-bot", async (c) => {
+  app.post(telegramPaths.chatAddBot(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = addBotToChat(store, {
@@ -1041,7 +1042,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/remove-bot", async (c) => {
+  app.post(telegramPaths.chatRemoveBot(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = removeBotFromChat(store, {
@@ -1052,7 +1053,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/reactions", async (c) => {
+  app.post(telegramPaths.chatReactions(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = simulateReaction(store, {
@@ -1066,33 +1067,33 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.get("/_emu/telegram/chats/:chatId/drafts/:draftId", (c) => {
+  app.get(telegramPaths.chatDraft(":chatId", ":draftId"), (c) => {
     const chatId = Number(c.req.param("chatId"));
     const draftId = Number(c.req.param("draftId"));
     const snapshots = getDraftHistory(store, { chatId, draftId });
     return c.json({ ok: true, snapshots });
   });
 
-  app.post("/_emu/telegram/chats/channel", async (c) => {
+  app.post(telegramPaths.channel(), async (c) => {
     const body = await parseTelegramBody(c);
     const chat = createChannel(store, body as unknown as CreateChannelInput);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
-  app.post("/_emu/telegram/chats/supergroup", async (c) => {
+  app.post(telegramPaths.supergroup(), async (c) => {
     const body = await parseTelegramBody(c);
     const chat = createSupergroup(store, body as unknown as CreateSupergroupInput);
     return c.json({ ok: true, chat: serializeChat(chat) });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/topics", async (c) => {
+  app.post(telegramPaths.chatTopics(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = createForumTopic(store, { chatId, name: String(body.name ?? "") });
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/channel-posts", async (c) => {
+  app.post(telegramPaths.channelPosts(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const photoBytes =
@@ -1111,7 +1112,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/channel-post-edits", async (c) => {
+  app.post(telegramPaths.channelPostEdits(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const result = simulateChannelPost(store, {
@@ -1124,7 +1125,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/chats/:chatId/media", async (c) => {
+  app.post(telegramPaths.chatMedia(":chatId"), async (c) => {
     const chatId = Number(c.req.param("chatId"));
     const body = await parseTelegramBody(c);
     const bytes =
@@ -1148,7 +1149,7 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.post("/_emu/telegram/faults", async (c) => {
+  app.post(telegramPaths.faults(), async (c) => {
     const body = await parseTelegramBody(c);
     const result = injectFault(store, {
       botId: Number(body.bot_id ?? body.botId),
@@ -1161,12 +1162,12 @@ export function controlRoutes(ctx: RouteContext): void {
     return c.json({ ok: true, ...result });
   });
 
-  app.delete("/_emu/telegram/faults", (c) => {
+  app.delete(telegramPaths.faults(), (c) => {
     clearFaults(store);
     return c.json({ ok: true });
   });
 
-  app.get("/_emu/telegram/callbacks/:id", (c) => {
+  app.get(telegramPaths.callbackById(":id"), (c) => {
     const id = c.req.param("id") ?? "";
     const answer = getCallbackAnswer(store, id);
     if (!answer) return c.json({ ok: false, error: "callback_query not found" }, 404);

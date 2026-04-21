@@ -1,3 +1,5 @@
+import { telegramPaths } from "./paths.js";
+
 /**
  * Programmatic test client for the Telegram emulator.
  *
@@ -232,27 +234,27 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     baseUrl: root,
 
     async createBot(input) {
-      const r = await postJson(root, "/_emu/telegram/bots", input);
+      const r = await postJson(root, telegramPaths.bots(), input);
       return r.bot as TestBot;
     },
 
     async createUser(input) {
-      const r = await postJson(root, "/_emu/telegram/users", input);
+      const r = await postJson(root, telegramPaths.users(), input);
       return r.user as TestUser;
     },
 
     async createPrivateChat(input) {
-      const r = await postJson(root, "/_emu/telegram/chats/private", input);
+      const r = await postJson(root, telegramPaths.privateChat(), input);
       return r.chat as TestChat;
     },
 
     async createGroupChat(input) {
-      const r = await postJson(root, "/_emu/telegram/chats/group", input);
+      const r = await postJson(root, telegramPaths.groupChat(), input);
       return r.chat as TestChat;
     },
 
     async sendUserMessage(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/messages`, {
+      const r = await postJson(root, telegramPaths.chatMessages(input.chatId), {
         userId: input.userId,
         text: input.text,
         replyToMessageId: input.replyToMessageId,
@@ -262,7 +264,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
 
     async sendUserPhoto(input) {
       const buf = Buffer.isBuffer(input.photoBytes) ? input.photoBytes : Buffer.from(input.photoBytes);
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/photos`, {
+      const r = await postJson(root, telegramPaths.chatPhotos(input.chatId), {
         userId: input.userId,
         photoBase64: buf.toString("base64"),
         mimeType: input.mimeType,
@@ -276,7 +278,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async clickInlineButton(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/callbacks`, {
+      const r = await postJson(root, telegramPaths.chatCallbacks(input.chatId), {
         userId: input.userId,
         messageId: input.messageId,
         data: input.callbackData,
@@ -288,7 +290,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async editUserMessage(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/edits`, {
+      const r = await postJson(root, telegramPaths.chatEdits(input.chatId), {
         messageId: input.messageId,
         userId: input.userId,
         text: input.text,
@@ -297,7 +299,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async addBotToChat(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/add-bot`, {
+      const r = await postJson(root, telegramPaths.chatAddBot(input.chatId), {
         botId: input.botId,
         byUserId: input.byUserId,
       });
@@ -305,7 +307,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async removeBotFromChat(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/remove-bot`, {
+      const r = await postJson(root, telegramPaths.chatRemoveBot(input.chatId), {
         botId: input.botId,
         byUserId: input.byUserId,
       });
@@ -313,7 +315,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async promoteChatMember(input) {
-      await postJson(root, `/_emu/telegram/chats/${input.chatId}/promote`, {
+      await postJson(root, telegramPaths.chatPromote(input.chatId), {
         userId: input.userId,
         botId: input.botId,
         demote: input.demote,
@@ -321,7 +323,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async reactToMessage(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/reactions`, {
+      const r = await postJson(root, telegramPaths.chatReactions(input.chatId), {
         messageId: input.messageId,
         userId: input.userId,
         reaction: input.reaction,
@@ -330,22 +332,22 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async createSupergroup(input) {
-      const r = await postJson(root, "/_emu/telegram/chats/supergroup", input);
+      const r = await postJson(root, telegramPaths.supergroup(), input);
       return r.chat as TestChat;
     },
 
     async createChannel(input) {
-      const r = await postJson(root, "/_emu/telegram/chats/channel", input);
+      const r = await postJson(root, telegramPaths.channel(), input);
       return r.chat as TestChat;
     },
 
     async createForumTopic(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/topics`, { name: input.name });
+      const r = await postJson(root, telegramPaths.chatTopics(input.chatId), { name: input.name });
       return { message_thread_id: r.message_thread_id as number, name: r.name as string };
     },
 
     async postAsChannel(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/channel-posts`, {
+      const r = await postJson(root, telegramPaths.channelPosts(input.chatId), {
         text: input.text,
         caption: input.caption,
         reply_to_message_id: input.replyToMessageId,
@@ -355,7 +357,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async editChannelPost(input) {
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/channel-post-edits`, {
+      const r = await postJson(root, telegramPaths.channelPostEdits(input.chatId), {
         messageId: input.messageId,
         text: input.text,
         caption: input.caption,
@@ -365,7 +367,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
 
     async sendUserMedia(input) {
       const buf = Buffer.isBuffer(input.bytes) ? input.bytes : Buffer.from(input.bytes);
-      const r = await postJson(root, `/_emu/telegram/chats/${input.chatId}/media`, {
+      const r = await postJson(root, telegramPaths.chatMedia(input.chatId), {
         userId: input.userId,
         kind: input.kind,
         bytesBase64: buf.toString("base64"),
@@ -385,7 +387,7 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async injectFault(input) {
-      const r = await postJson(root, "/_emu/telegram/faults", {
+      const r = await postJson(root, telegramPaths.faults(), {
         bot_id: input.botId,
         method: input.method,
         error_code: input.errorCode,
@@ -397,14 +399,15 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async clearFaults() {
-      const res = await fetch(`${root}/_emu/telegram/faults`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`DELETE /_emu/telegram/faults failed: ${res.status}`);
+      const res = await fetch(`${root}${telegramPaths.faults()}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`DELETE ${telegramPaths.faults()} failed: ${res.status}`);
     },
 
     async getCallbackAnswer(input) {
-      const res = await fetch(`${root}/_emu/telegram/callbacks/${encodeURIComponent(input.callbackQueryId)}`);
+      const path = telegramPaths.callbackById(encodeURIComponent(input.callbackQueryId));
+      const res = await fetch(`${root}${path}`);
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`GET /_emu/telegram/callbacks failed: ${res.status}`);
+      if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
       return (await res.json()) as {
         callback_query_id: string;
         answered: boolean;
@@ -416,22 +419,22 @@ export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
     },
 
     async getDraftHistory(input) {
-      const r = await getJson(root, `/_emu/telegram/chats/${input.chatId}/drafts/${input.draftId}`);
+      const r = await getJson(root, telegramPaths.chatDraft(input.chatId, input.draftId));
       return r.snapshots as Array<{ seq: number; text: string; entities?: unknown[]; bot_id: number }>;
     },
 
     async getSentMessages(input) {
-      const r = await getJson(root, `/_emu/telegram/chats/${input.chatId}/messages?scope=bot`);
+      const r = await getJson(root, `${telegramPaths.chatMessages(input.chatId)}?scope=bot`);
       return r.messages as TestMessage[];
     },
 
     async getAllMessages(input) {
-      const r = await getJson(root, `/_emu/telegram/chats/${input.chatId}/messages?scope=all`);
+      const r = await getJson(root, `${telegramPaths.chatMessages(input.chatId)}?scope=all`);
       return r.messages as TestMessage[];
     },
 
     async reset() {
-      await postJson(root, "/_emu/telegram/reset", {});
+      await postJson(root, telegramPaths.reset(), {});
     },
   };
 }
