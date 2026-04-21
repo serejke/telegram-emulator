@@ -16,6 +16,26 @@ import { getDispatcher } from "../dispatcher.js";
 import { MarkdownParseError, parseMarkdownV2 } from "../markdown.js";
 import { HtmlParseError, parseHtml } from "../html.js";
 import { allocateMessageId, buildMediaField, buildPhotoSizes } from "../services/media.js";
+import {
+  closeForumTopicMethod,
+  createForumTopicMethod,
+  deleteForumTopicMethod,
+  editForumTopicMethod,
+} from "./bot-api-forum.js";
+import {
+  getChat,
+  getChatAdministrators,
+  getChatMember,
+  getChatMemberCount,
+  sendChatAction,
+} from "./bot-api-chats.js";
+import {
+  deleteWebhook,
+  getMe,
+  getUpdates,
+  getWebhookInfo,
+  setWebhook,
+} from "./bot-api-delivery.js";
 import type {
   InlineKeyboardMarkup,
   MessageEntity,
@@ -185,97 +205,6 @@ function queryToBody(c: Context): Record<string, unknown> {
     }
   }
   return result;
-}
-
-function getMe(c: Context, bot: TelegramBot) {
-  return ok(c, {
-    id: bot.bot_id,
-    is_bot: true,
-    first_name: bot.first_name,
-    username: bot.username,
-    can_join_groups: bot.can_join_groups,
-    can_read_all_group_messages: bot.can_read_all_group_messages,
-    supports_inline_queries: bot.supports_inline_queries,
-  });
-}
-
-async function getUpdates(
-  c: Context,
-  bot: TelegramBot,
-  body: Record<string, unknown>,
-  dispatcher: ReturnType<typeof getDispatcher>,
-) {
-  const offset = typeof body.offset === "number" ? (body.offset as number) : undefined;
-  const limit = typeof body.limit === "number" ? Math.min(body.limit as number, 100) : 100;
-  const timeout = typeof body.timeout === "number" ? Math.min(body.timeout as number, 50) : 0;
-  const allowedUpdates = Array.isArray(body.allowed_updates)
-    ? (body.allowed_updates as string[])
-    : bot.webhook_allowed_updates ?? null;
-
-  if (bot.webhook_url) {
-    return tgError(c, "Conflict: can't use getUpdates method while webhook is active", 409, 409);
-  }
-  if (dispatcher.isPolling(bot.bot_id)) {
-    return tgError(c, "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running", 409, 409);
-  }
-
-  const updates = await dispatcher.getUpdates(bot.bot_id, offset, limit, timeout);
-  const filtered = allowedUpdates && allowedUpdates.length > 0
-    ? updates.filter((u) => allowedUpdates.includes(u.type))
-    : updates;
-  return c.json({
-    ok: true,
-    result: filtered.map((u) => u.payload),
-  });
-}
-
-function setWebhook(
-  c: Context,
-  bot: TelegramBot,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const url = typeof body.url === "string" ? (body.url as string) : "";
-  const secret = typeof body.secret_token === "string" ? (body.secret_token as string) : null;
-  const allowed = Array.isArray(body.allowed_updates) ? (body.allowed_updates as string[]) : null;
-
-  if (!url) {
-    // Empty URL removes the webhook, matching real behaviour.
-    return deleteWebhook(c, bot, store);
-  }
-  // Real Telegram only allows HTTPS webhooks (and rejects localhost, though
-  // the emulator is lenient there for hermetic testing).
-  if (!/^https:\/\//i.test(url)) {
-    return tgError(
-      c,
-      "Bad Request: bad webhook: HTTPS url must be provided for webhook",
-      400,
-      400,
-    );
-  }
-
-  const ts = getTelegramStore(store);
-  ts.bots.update(bot.id, {
-    webhook_url: url,
-    webhook_secret: secret,
-    webhook_allowed_updates: allowed,
-  });
-  return okRaw(c, true);
-}
-
-function deleteWebhook(c: Context, bot: TelegramBot, store: import("@emulators/core").Store) {
-  const ts = getTelegramStore(store);
-  ts.bots.update(bot.id, { webhook_url: null, webhook_secret: null, webhook_allowed_updates: null });
-  return okRaw(c, true);
-}
-
-function getWebhookInfo(c: Context, bot: TelegramBot) {
-  return ok(c, {
-    url: bot.webhook_url ?? "",
-    has_custom_certificate: false,
-    pending_update_count: 0,
-    allowed_updates: bot.webhook_allowed_updates ?? undefined,
-  });
 }
 
 function sendMessage(
@@ -571,27 +500,6 @@ async function sendPhoto(
   return ok(c, serializeMessage(msg, { store }));
 }
 
-function sendChatAction(c: Context) {
-  // Real Telegram returns True unconditionally for valid tokens. We accept
-  // any action string (typing, upload_photo, record_video, etc.) and return
-  // True. No state mutation; it's purely an ephemeral presence indicator.
-  return c.json({ ok: true, result: true });
-}
-
-function getChatMemberCount(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
-  const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
-  if (!chat) return tgError(c, "Bad Request: chat not found");
-  const count = chat.member_user_ids.length + chat.member_bot_ids.length;
-  return c.json({ ok: true, result: count });
-}
-
 function setMessageReaction(
   c: Context,
   bot: TelegramBot,
@@ -686,234 +594,6 @@ function answerCallbackQuery(
   });
   void bot;
   return c.json({ ok: true, result: true });
-}
-
-function getChat(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
-  const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
-  if (!chat) return tgError(c, "Bad Request: chat not found");
-  return ok(c, serializeChatFullInfo(chat, { store }));
-}
-
-function chatMemberStatus(chat: TelegramChat, subjectId: number, isBot: boolean): "creator" | "administrator" | "member" | "left" {
-  if (isBot) {
-    if (!chat.member_bot_ids.includes(subjectId)) return "left";
-    if ((chat.admin_bot_ids ?? []).includes(subjectId)) return "administrator";
-    // Bots in their own private chat effectively behave as admins.
-    if (chat.type === "private") return "administrator";
-    return "member";
-  }
-  if (!chat.member_user_ids.includes(subjectId)) return "left";
-  if (chat.creator_user_id === subjectId) return "creator";
-  if ((chat.admin_user_ids ?? []).includes(subjectId)) return "administrator";
-  return "member";
-}
-
-function adminMemberExtras(status: "creator" | "administrator" | "member" | "left", chat: TelegramChat): Record<string, unknown> {
-  if (status !== "creator" && status !== "administrator") return {};
-  const isForum = chat.type === "supergroup" && chat.is_forum === true;
-  return {
-    can_be_edited: status === "administrator",
-    is_anonymous: false,
-    can_manage_chat: true,
-    can_delete_messages: true,
-    can_manage_video_chats: true,
-    can_restrict_members: status === "creator",
-    can_promote_members: status === "creator",
-    can_change_info: true,
-    can_invite_users: true,
-    can_post_messages: chat.type === "channel" ? true : undefined,
-    can_edit_messages: chat.type === "channel" ? true : undefined,
-    can_pin_messages: chat.type !== "channel" ? true : undefined,
-    can_manage_topics: isForum ? true : undefined,
-  };
-}
-
-function getChatMember(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  const userId = typeof body.user_id === "number" ? (body.user_id as number) : null;
-  if (chatId === null || userId === null) return tgError(c, "Bad Request: chat_id and user_id are required");
-  const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
-  if (!chat) return tgError(c, "Bad Request: chat not found");
-
-  const user = ts.users.findOneBy("user_id", userId);
-  const bot = ts.bots.findOneBy("bot_id", userId);
-  const isBotSubject = !!bot && !user;
-  const knownMember =
-    (user && chat.member_user_ids.includes(userId)) || (bot && chat.member_bot_ids.includes(userId));
-
-  if (!user && !bot) return tgError(c, "Bad Request: user not found");
-  if (!knownMember) return tgError(c, "Bad Request: user not found in chat");
-
-  const status = chatMemberStatus(chat, userId, isBotSubject);
-  const userField = user ? serializeUser(user) : bot ? serializeBotAsUser(bot) : undefined;
-  const extras = adminMemberExtras(status, chat);
-  const out: Record<string, unknown> = { status, user: userField };
-  for (const [k, v] of Object.entries(extras)) {
-    if (v !== undefined) out[k] = v;
-  }
-  return ok(c, out);
-}
-
-function requireForumChat(c: Context, chatId: number | null, store: import("@emulators/core").Store) {
-  if (chatId === null) return { error: tgError(c, "Bad Request: chat_id is required") };
-  const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
-  if (!chat) return { error: tgError(c, "Bad Request: chat not found") };
-  if (chat.type !== "supergroup" || !chat.is_forum) {
-    return { error: tgError(c, "Bad Request: CHAT_NOT_FORUM") };
-  }
-  return { chat };
-}
-
-function createForumTopicMethod(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  const name = typeof body.name === "string" ? (body.name as string).trim() : "";
-  if (!name) return tgError(c, "Bad Request: name is required");
-  const { chat, error } = requireForumChat(c, chatId, store);
-  if (error) return error;
-  const ts = getTelegramStore(store);
-  const existing = ts.forumTopics.findBy("chat_id", chat.chat_id);
-  const maxId = existing.reduce((m, t) => Math.max(m, t.message_thread_id), 1);
-  const message_thread_id = maxId + 1;
-  const iconColor = typeof body.icon_color === "number" ? (body.icon_color as number) : 0x6FB9F0;
-  const iconCustomEmojiId =
-    typeof body.icon_custom_emoji_id === "string" ? (body.icon_custom_emoji_id as string) : undefined;
-  ts.forumTopics.insert({
-    chat_id: chat.chat_id,
-    message_thread_id,
-    name,
-    icon_color: iconColor,
-    icon_custom_emoji_id: iconCustomEmojiId,
-  });
-  const out: Record<string, unknown> = {
-    message_thread_id,
-    name,
-    icon_color: iconColor,
-  };
-  if (iconCustomEmojiId) out.icon_custom_emoji_id = iconCustomEmojiId;
-  return ok(c, out);
-}
-
-function findForumTopic(
-  store: import("@emulators/core").Store,
-  chatId: number,
-  threadId: number,
-) {
-  const ts = getTelegramStore(store);
-  return ts.forumTopics
-    .findBy("chat_id", chatId)
-    .find((t) => t.message_thread_id === threadId && !t.is_deleted);
-}
-
-function editForumTopicMethod(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  const threadId = typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : null;
-  if (threadId === null) return tgError(c, "Bad Request: message_thread_id is required");
-  const { chat, error } = requireForumChat(c, chatId, store);
-  if (error) return error;
-  const topic = findForumTopic(store, chat.chat_id, threadId);
-  if (!topic) return tgError(c, "Bad Request: topic not found");
-  const ts = getTelegramStore(store);
-  const updates: Partial<typeof topic> = {};
-  if (typeof body.name === "string") updates.name = body.name;
-  if (typeof body.icon_custom_emoji_id === "string") updates.icon_custom_emoji_id = body.icon_custom_emoji_id;
-  ts.forumTopics.update(topic.id, updates);
-  return okRaw(c, true);
-}
-
-function closeForumTopicMethod(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-  close: boolean,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  const threadId = typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : null;
-  if (threadId === null) return tgError(c, "Bad Request: message_thread_id is required");
-  const { chat, error } = requireForumChat(c, chatId, store);
-  if (error) return error;
-  const topic = findForumTopic(store, chat.chat_id, threadId);
-  if (!topic) return tgError(c, "Bad Request: topic not found");
-  const ts = getTelegramStore(store);
-  ts.forumTopics.update(topic.id, { is_closed: close });
-  return okRaw(c, true);
-}
-
-function deleteForumTopicMethod(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  const threadId = typeof body.message_thread_id === "number" ? (body.message_thread_id as number) : null;
-  if (threadId === null) return tgError(c, "Bad Request: message_thread_id is required");
-  const { chat, error } = requireForumChat(c, chatId, store);
-  if (error) return error;
-  const topic = findForumTopic(store, chat.chat_id, threadId);
-  if (!topic) return tgError(c, "Bad Request: topic not found");
-  const ts = getTelegramStore(store);
-  ts.forumTopics.update(topic.id, { is_deleted: true });
-  return okRaw(c, true);
-}
-
-function getChatAdministrators(
-  c: Context,
-  body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
-) {
-  const chatId = coerceChatId(body.chat_id);
-  if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
-  const ts = getTelegramStore(store);
-  const chat = ts.chats.findOneBy("chat_id", chatId);
-  if (!chat) return tgError(c, "Bad Request: chat not found");
-
-  const admins: Record<string, unknown>[] = [];
-  const push = (
-    status: "creator" | "administrator",
-    subject: Record<string, unknown>,
-  ) => {
-    const base: Record<string, unknown> = { status, user: subject };
-    const extras = adminMemberExtras(status, chat);
-    for (const [k, v] of Object.entries(extras)) {
-      if (v !== undefined) base[k] = v;
-    }
-    admins.push(base);
-  };
-
-  if (chat.creator_user_id !== undefined) {
-    const u = ts.users.findOneBy("user_id", chat.creator_user_id);
-    if (u) push("creator", serializeUser(u));
-  }
-  for (const uid of chat.admin_user_ids ?? []) {
-    if (uid === chat.creator_user_id) continue;
-    const u = ts.users.findOneBy("user_id", uid);
-    if (u) push("administrator", serializeUser(u));
-  }
-  for (const bid of chat.admin_bot_ids ?? []) {
-    const b = ts.bots.findOneBy("bot_id", bid);
-    if (b) push("administrator", serializeBotAsUser(b));
-  }
-  return okRaw(c, admins);
 }
 
 function setMyCommands(
