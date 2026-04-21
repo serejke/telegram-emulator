@@ -200,6 +200,25 @@ describe("Telegram Bot API - mentions in groups", () => {
     expect(updates.result[0].message.text).toContain("@trip_bot");
   });
 
+  it("privacy-mode bot does NOT receive bare /command without @mention", async () => {
+    const bot = createBot(tx.store, { username: "quiet_bot" });
+    const user = createUser(tx.store, { first_name: "A" });
+    const group = createGroupChat(tx.store, {
+      title: "G",
+      memberIds: [user.user_id],
+      botIds: [bot.bot_id],
+    });
+
+    simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "/help" });
+    simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "/help@quiet_bot" });
+
+    const updates = await json<{ result: Array<{ message: { text: string } }> }>(
+      await postJson(tx.app, `/bot${bot.token}/getUpdates`, {}),
+    );
+    expect(updates.result).toHaveLength(1);
+    expect(updates.result[0].message.text).toBe("/help@quiet_bot");
+  });
+
   it("can_read_all_group_messages bot sees every message", async () => {
     const bot = createBot(tx.store, { username: "greedy_bot", can_read_all_group_messages: true });
     const user = createUser(tx.store, { first_name: "A" });

@@ -542,14 +542,18 @@ export function simulateUserMessage(store: Store, input: SimulateUserMessageInpu
 }
 
 function shouldBotSeeGroupMessage(text: string, entities: MessageEntity[], bot: TelegramBot): boolean {
+  // Privacy mode (the default, can_read_all_group_messages = false):
+  //   - @bot_username mention anywhere → delivered
+  //   - /command@bot_username → delivered to that specific bot only
+  //   - bare /command (no @) → NOT delivered (real Telegram drops it unless
+  //     the bot has privacy off)
+  //   - everything else → not delivered
+  // Privacy off (can_read_all_group_messages = true): delivered unconditionally.
   if (bot.can_read_all_group_messages) return true;
   for (const e of entities) {
     const chunk = text.slice(e.offset, e.offset + e.length);
     if (e.type === "mention" && chunk.toLowerCase() === `@${bot.username.toLowerCase()}`) return true;
-    if (e.type === "bot_command") {
-      if (!chunk.includes("@")) return true; // plain /command is delivered to all bots
-      if (chunk.toLowerCase().endsWith(`@${bot.username.toLowerCase()}`)) return true;
-    }
+    if (e.type === "bot_command" && chunk.toLowerCase().endsWith(`@${bot.username.toLowerCase()}`)) return true;
   }
   return false;
 }
