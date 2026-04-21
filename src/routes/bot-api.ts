@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { RouteContext } from "@emulators/core";
+import type { RouteContext, Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { generateCallbackQueryId, nextFileId } from "../ids.js";
 import { ok, okRaw, parseTelegramBody, tgError } from "../http.js";
@@ -45,6 +45,7 @@ import type {
   TelegramAudio,
   TelegramBot,
   TelegramChat,
+  TelegramDocument,
   TelegramFault,
   TelegramMessage,
   TelegramSticker,
@@ -211,7 +212,7 @@ function sendMessage(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const rawText = typeof body.text === "string" ? (body.text as string) : "";
@@ -404,7 +405,7 @@ async function sendPhoto(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
@@ -504,7 +505,7 @@ function setMessageReaction(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
@@ -554,7 +555,7 @@ function getFile(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const fileId = typeof body.file_id === "string" ? (body.file_id as string) : "";
   if (!fileId) return tgError(c, "Bad Request: file_id is required");
@@ -576,7 +577,7 @@ function answerCallbackQuery(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const id = typeof body.callback_query_id === "string" ? (body.callback_query_id as string) : "";
   if (!id) return tgError(c, "Bad Request: callback_query_id is required");
@@ -600,7 +601,7 @@ function setMyCommands(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const commands = Array.isArray(body.commands) ? (body.commands as Array<{ command: string; description: string }>) : [];
   const ts = getTelegramStore(store);
@@ -616,7 +617,7 @@ function editMessageReplyMarkup(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
@@ -659,7 +660,7 @@ export { parseEntities };
 
 // expose for control plane
 export function simulateInsertMessage(
-  store: import("@emulators/core").Store,
+  store: Store,
   input: {
     chatId: number;
     fromUserId: number;
@@ -668,7 +669,7 @@ export function simulateInsertMessage(
     replyTo?: number;
     messageThreadId?: number;
   },
-): import("../entities.js").TelegramMessage {
+): TelegramMessage {
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", input.chatId);
   if (!chat) throw new Error(`chat ${input.chatId} not found`);
@@ -693,7 +694,7 @@ export function simulateInsertMessage(
 // ---- Full-parity additions: faults, rich media, length limits ----
 
 function consumeFault(
-  store: import("@emulators/core").Store,
+  store: Store,
   botId: number,
   method: string,
 ): TelegramFault | null {
@@ -727,7 +728,7 @@ async function sendMediaMessage(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
   kind: MediaKind,
 ) {
   const chatId = coerceChatId(body.chat_id);
@@ -873,7 +874,7 @@ function editMessageText(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
@@ -905,7 +906,7 @@ function editMessageText(
 }
 
 function dispatchEditedMessage(
-  store: import("@emulators/core").Store,
+  store: Store,
   chat: TelegramChat,
   editorBotId: number,
   updated: TelegramMessage,
@@ -926,7 +927,7 @@ function deleteMessage(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const messageId = typeof body.message_id === "number" ? (body.message_id as number) : null;
@@ -948,7 +949,7 @@ function sendMessageDraft(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   const draftId = typeof body.draft_id === "number" ? (body.draft_id as number) : 0;
@@ -989,7 +990,7 @@ async function sendDocument(
   c: Context,
   bot: TelegramBot,
   body: Record<string, unknown>,
-  store: import("@emulators/core").Store,
+  store: Store,
 ) {
   const chatId = coerceChatId(body.chat_id);
   if (chatId === null) return tgError(c, "Bad Request: chat_id is required");
@@ -1021,7 +1022,7 @@ async function sendDocument(
   const replyMarkup = body.reply_markup as ReplyMarkup | undefined;
   const docInput = body.document;
 
-  let document: import("../entities.js").TelegramDocument;
+  let document: TelegramDocument;
 
   if (typeof docInput === "string") {
     // Re-send by file_id — Telegram preserves the same ids on echo.

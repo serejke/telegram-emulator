@@ -2,20 +2,21 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createTestApp, postJson, json, type TestApp } from "./helpers.js";
 import { getTelegramStore } from "../store.js";
 import {
+  clearFaults,
   createBot,
-  createUser,
-  createPrivateChat,
-  createGroupChat,
-  createSupergroup,
   createChannel,
   createForumTopic,
+  createGroupChat,
+  createPrivateChat,
+  createSupergroup,
+  createUser,
+  getCallbackAnswer,
+  injectFault,
+  simulateCallback,
   simulateChannelPost,
   simulateReaction,
-  simulateUserMessage,
   simulateUserMedia,
-  injectFault,
-  clearFaults,
-  getCallbackAnswer,
+  simulateUserMessage,
 } from "../routes/control.js";
 
 describe("Integration — channel posts", () => {
@@ -558,7 +559,6 @@ describe("Integration — callback answer reader", () => {
     });
     const ts = getTelegramStore(tx.store);
     const msg = ts.messages.all()[0];
-    const { simulateCallback } = await import("../routes/control.js");
     simulateCallback(tx.store, {
       chatId: dm.chat_id,
       userId: user.user_id,
@@ -960,7 +960,6 @@ describe("Integration — answerCallbackQuery stores the answer", () => {
     // User taps
     const ts = getTelegramStore(tx.store);
     const sent = ts.messages.all()[0];
-    const { simulateCallback } = await import("../routes/control.js");
     simulateCallback(tx.store, {
       chatId: dm.chat_id,
       userId: user.user_id,

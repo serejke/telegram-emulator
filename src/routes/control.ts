@@ -19,15 +19,22 @@ import {
   serializeUser,
 } from "../serializers.js";
 import { parseEntities } from "../entity-parser.js";
-import { buildPhotoSizes } from "../services/media.js";
-import { getDispatcher } from "../dispatcher.js";
-import { telegramPaths } from "../paths.js";
 import {
   allocateMessageId,
   buildMediaField as buildMediaFieldShared,
+  buildPhotoSizes,
   defaultMimeForMediaKind as defaultMimeForMediaKindShared,
 } from "../services/media.js";
-import type { InlineKeyboardMarkup, MessageEntity, TelegramBot, TelegramChat, TelegramUser } from "../entities.js";
+import { getDispatcher } from "../dispatcher.js";
+import { telegramPaths } from "../paths.js";
+import type {
+  InlineKeyboardMarkup,
+  MessageEntity,
+  TelegramBot,
+  TelegramChat,
+  TelegramMessage,
+  TelegramUser,
+} from "../entities.js";
 
 // Chat ID conventions (match real Telegram):
 //   private:    positive numbers equal to user_id
@@ -254,7 +261,7 @@ export function createForumTopic(
 export interface SimulateChannelPostInput {
   chatId: number;
   text?: string;
-  entities?: import("../entities.js").MessageEntity[];
+  entities?: MessageEntity[];
   caption?: string;
   photoBytes?: Buffer;
   replyToMessageId?: number;
@@ -274,7 +281,7 @@ export function simulateChannelPost(
     throw new Error(`simulateChannelPost requires a channel; chat ${input.chatId} is ${chat.type}`);
   }
 
-  let msg: import("../entities.js").TelegramMessage;
+  let msg: TelegramMessage;
   if (input.edited) {
     if (input.existingMessageId === undefined) throw new Error("existingMessageId required for edited post");
     const existing = ts.messages

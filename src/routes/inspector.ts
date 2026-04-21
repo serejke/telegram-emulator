@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { RouteContext } from "@emulators/core";
+import type { RouteContext, Store } from "@emulators/core";
 import { escapeHtml, renderSettingsPage } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import type {
@@ -98,7 +98,7 @@ interface Lookups {
   anyToken: string;
 }
 
-function buildLookups(store: import("@emulators/core").Store): Lookups {
+function buildLookups(store: Store): Lookups {
   const ts = getTelegramStore(store);
   const users = new Map<number, string>();
   for (const u of ts.users.all()) {
@@ -129,7 +129,7 @@ function renderBotLink(bot: TelegramBot, activeId: number, view: string): string
   return `<a href="/?view=bots&bot=${bot.bot_id}"${active}>🤖 @${escapeHtml(bot.username)}</a>`;
 }
 
-function renderSidebar(store: import("@emulators/core").Store, view: string, activeId: number): string {
+function renderSidebar(store: Store, view: string, activeId: number): string {
   const ts = getTelegramStore(store);
   const tabs = `<div class="section-heading"><a href="/?view=chats" style="color:${view === "chats" ? "#33ff00" : "#1a8c00"}">Chats</a> / <a href="/?view=bots" style="color:${view === "bots" ? "#33ff00" : "#1a8c00"}">Bots</a></div>`;
 
@@ -144,7 +144,7 @@ function renderSidebar(store: import("@emulators/core").Store, view: string, act
   return tabs + chats.map((ch) => renderChatLink(ch, activeId, view)).join("\n");
 }
 
-function renderChatView(store: import("@emulators/core").Store, chatId: number): string {
+function renderChatView(store: Store, chatId: number): string {
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", chatId);
   if (!chat) return `<p class="empty">Chat ${chatId} not found</p>`;
@@ -208,7 +208,7 @@ ${[...draftsByKey.entries()]
   return `<div class="s-card">${header}<div class="section-heading">Messages</div>${body}${draftsHtml}</div>`;
 }
 
-function renderBotView(store: import("@emulators/core").Store, botId: number): string {
+function renderBotView(store: Store, botId: number): string {
   const ts = getTelegramStore(store);
   const bot = ts.bots.findOneBy("bot_id", botId);
   if (!bot) return `<p class="empty">Bot ${botId} not found</p>`;
