@@ -17,7 +17,9 @@ export type MessageEntityType =
   | "pre"
   | "text_link"
   | "text_mention"
-  | "custom_emoji";
+  | "custom_emoji"
+  | "blockquote"
+  | "expandable_blockquote";
 
 export interface MessageEntity {
   type: MessageEntityType;

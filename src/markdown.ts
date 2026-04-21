@@ -70,6 +70,33 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
   while (i < input.length) {
     const ch = input[i];
 
+    // --- Blockquote (`>` at line start, consecutive `>`-prefixed lines).
+    //     Expandable blockquote: leading `**>` on first line, trailing `||`
+    //     on last line.
+    const atLineStart = i === 0 || input[i - 1] === "\n";
+    if (atLineStart) {
+      const expandable = input.startsWith("**>", i);
+      const plain = !expandable && ch === ">";
+      if (expandable || plain) {
+        const quote = parseBlockquote(input, i, expandable);
+        if (quote) {
+          const startOffset = utf16Length(out.join(""));
+          const inner = parseMarkdownV2(quote.body);
+          out.push(inner.text);
+          for (const e of inner.entities) {
+            entities.push({ ...e, offset: e.offset + startOffset });
+          }
+          entities.push({
+            type: expandable ? "expandable_blockquote" : "blockquote",
+            offset: startOffset,
+            length: utf16Length(inner.text),
+          });
+          i = quote.nextIdx;
+          continue;
+        }
+      }
+    }
+
     if (ch === "\\") {
       // Escape: emit the next char literally, consume both.
       if (i + 1 >= input.length) {
@@ -293,6 +320,40 @@ function parseLink(
   if (j >= input.length || input[j] !== ")") return null;
   if (url.length === 0) return null;
   return { text, url, nextIdx: j + 1 };
+}
+
+function parseBlockquote(
+  input: string,
+  start: number,
+  expandable: boolean,
+): { body: string; nextIdx: number } | null {
+  // Strip the leading `**` for expandable; each line must start with `>`.
+  let i = expandable ? start + 2 : start;
+  if (input[i] !== ">") return null;
+  const lines: string[] = [];
+  while (i < input.length) {
+    if (input[i] !== ">") break;
+    i += 1; // consume the leading `>`
+    let line = "";
+    while (i < input.length && input[i] !== "\n") {
+      line += input[i];
+      i += 1;
+    }
+    lines.push(line);
+    if (i < input.length && input[i] === "\n") {
+      i += 1; // consume the newline; the next iter checks if the new line starts with `>`
+    }
+  }
+  if (lines.length === 0) return null;
+  let nextIdx = i;
+  if (expandable) {
+    // The closing `||` must sit at the end of the last line content.
+    const last = lines[lines.length - 1];
+    if (!last.endsWith("||")) return null;
+    lines[lines.length - 1] = last.slice(0, -2);
+  }
+  const body = lines.join("\n");
+  return { body, nextIdx };
 }
 
 function findUnescaped(input: string, needle: string, startIdx: number): number {

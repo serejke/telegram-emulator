@@ -148,4 +148,36 @@ describe("HTML parser", () => {
   it("rejects unsupported tag", () => {
     expect(() => parseHtml("<marquee>nope</marquee>")).toThrowError(HtmlParseError);
   });
+
+  it("parses <blockquote>", () => {
+    const r = parseHtml("<blockquote>quoted</blockquote>");
+    expect(r.text).toBe("quoted");
+    expect(r.entities).toEqual([{ type: "blockquote", offset: 0, length: 6 }]);
+  });
+
+  it("parses <blockquote expandable>", () => {
+    const r = parseHtml("<blockquote expandable>long</blockquote>");
+    expect(r.text).toBe("long");
+    expect(r.entities).toEqual([{ type: "expandable_blockquote", offset: 0, length: 4 }]);
+  });
+});
+
+describe("MarkdownV2 blockquote", () => {
+  it("parses single-line > blockquote", () => {
+    const r = parseMarkdownV2(">quoted");
+    expect(r.text).toBe("quoted");
+    expect(r.entities).toEqual([{ type: "blockquote", offset: 0, length: 6 }]);
+  });
+
+  it("parses multi-line > blockquote joined with newline", () => {
+    const r = parseMarkdownV2(">line one\n>line two");
+    expect(r.text).toBe("line one\nline two");
+    expect(r.entities).toEqual([{ type: "blockquote", offset: 0, length: 17 }]);
+  });
+
+  it("parses expandable blockquote **>...||", () => {
+    const r = parseMarkdownV2("**>line one\n>line two||");
+    expect(r.text).toBe("line one\nline two");
+    expect(r.entities).toEqual([{ type: "expandable_blockquote", offset: 0, length: 17 }]);
+  });
 });

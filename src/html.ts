@@ -42,6 +42,7 @@ const TAG_TO_ENTITY: Record<string, MessageEntity["type"]> = {
   pre: "pre",
   a: "text_link",
   "tg-spoiler": "spoiler",
+  blockquote: "blockquote",
 };
 
 export function parseHtml(input: string): ParsedHtml {
@@ -69,8 +70,12 @@ export function parseHtml(input: string): ParsedHtml {
           );
         }
         const endOffset = utf16Length(out.join(""));
+        let entType = open.entityType;
+        if (entType === "blockquote" && open.attrs && "expandable" in open.attrs) {
+          entType = "expandable_blockquote";
+        }
         const ent: MessageEntity = {
-          type: open.entityType,
+          type: entType,
           offset: open.startOffset,
           length: endOffset - open.startOffset,
         };
@@ -174,10 +179,11 @@ function parseTagBody(body: string): {
   const name = nameMatch ? nameMatch[1] : s;
   const rest = nameMatch ? s.slice(name.length).trim() : "";
   const attrs: Record<string, string> = {};
-  // Very small attribute parser: key="value" or key='value' or key=value
-  const attrRe = /([A-Za-z_:][A-Za-z0-9_:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  // Attribute parser: key="value" / key='value' / key=value / bare key.
+  const attrRe = /([A-Za-z_:][A-Za-z0-9_:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
   let m: RegExpExecArray | null;
   while ((m = attrRe.exec(rest)) !== null) {
+    if (!m[0]) break;
     attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? "";
   }
   return { name, attrs, selfClose };
