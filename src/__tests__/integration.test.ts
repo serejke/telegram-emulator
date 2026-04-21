@@ -877,6 +877,34 @@ describe("Integration — reactions", () => {
     expect(getTelegramStore(tx.store).reactions.all()).toHaveLength(0);
   });
 
+  it("bot editMessageText dispatches edited_message to other bots in the chat", async () => {
+    const botA = createBot(tx.store, { username: "ba", can_read_all_group_messages: true });
+    const botB = createBot(tx.store, { username: "bb", can_read_all_group_messages: true });
+    const user = createUser(tx.store, { first_name: "U" });
+    const group = createGroupChat(tx.store, {
+      title: "G",
+      memberIds: [user.user_id],
+      botIds: [botA.bot_id, botB.bot_id],
+    });
+
+    const sent = await json<{ result: { message_id: number } }>(
+      await postJson(tx.app, `/bot${botA.token}/sendMessage`, { chat_id: group.chat_id, text: "hi" }),
+    );
+    // Drain any existing updates for botB first.
+    await postJson(tx.app, `/bot${botB.token}/getUpdates`, {});
+
+    await postJson(tx.app, `/bot${botA.token}/editMessageText`, {
+      chat_id: group.chat_id,
+      message_id: sent.result.message_id,
+      text: "hi (edited)",
+    });
+
+    const updates = await json<{ result: Array<{ edited_message?: { text: string } }> }>(
+      await postJson(tx.app, `/bot${botB.token}/getUpdates`, {}),
+    );
+    expect(updates.result.some((u) => u.edited_message?.text === "hi (edited)")).toBe(true);
+  });
+
   it("simulateReaction dispatches message_reaction Update to bots in chat", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const user = createUser(tx.store, { first_name: "A" });
@@ -893,10 +921,19 @@ describe("Integration — reactions", () => {
     });
 
     const updates = await json<{
-      result: Array<{ message_reaction?: { new_reaction: Array<{ emoji: string }> } }>;
+      result: Array<{
+        message_reaction?: { new_reaction: Array<{ emoji: string }> };
+        message_reaction_count?: { reactions: Array<{ type: unknown; total_count: number }> };
+      }>;
     }>(await postJson(tx.app, `/bot${bot.token}/getUpdates`, {}));
-    expect(updates.result).toHaveLength(1);
-    expect(updates.result[0].message_reaction?.new_reaction[0].emoji).toBe("❤️");
+    // One message_reaction (per-user) + one message_reaction_count (anonymous
+    // aggregate) — matches real Telegram's dispatch shape.
+    expect(updates.result).toHaveLength(2);
+    const reaction = updates.result.find((u) => u.message_reaction);
+    const count = updates.result.find((u) => u.message_reaction_count);
+    expect(reaction?.message_reaction?.new_reaction[0].emoji).toBe("❤️");
+    expect(count?.message_reaction_count?.reactions).toHaveLength(1);
+    expect(count?.message_reaction_count?.reactions[0].total_count).toBe(1);
   });
 });
 

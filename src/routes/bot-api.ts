@@ -30,6 +30,7 @@ import type {
   TelegramBot,
   TelegramChat,
   TelegramFault,
+  TelegramMessage,
   TelegramSticker,
   TelegramVideo,
   TelegramVoice,
@@ -1190,7 +1191,27 @@ function editMessageText(
     edited_date: Math.floor(Date.now() / 1000),
   });
   const updated = ts.messages.get(msg.id)!;
+  const chat = ts.chats.findOneBy("chat_id", chatId);
+  if (chat) dispatchEditedMessage(store, chat, bot.bot_id, updated);
   return ok(c, serializeMessage(updated, { store }));
+}
+
+function dispatchEditedMessage(
+  store: import("@emulators/core").Store,
+  chat: TelegramChat,
+  editorBotId: number,
+  updated: TelegramMessage,
+): void {
+  const ts = getTelegramStore(store);
+  const dispatcher = getDispatcher(store);
+  const payload = serializeMessage(updated, { store });
+  for (const otherBotId of chat.member_bot_ids) {
+    if (otherBotId === editorBotId) continue;
+    const bot = ts.bots.findOneBy("bot_id", otherBotId);
+    if (!bot) continue;
+    const type = chat.type === "channel" ? "edited_channel_post" : "edited_message";
+    dispatcher.enqueue(otherBotId, type, payload);
+  }
 }
 
 function deleteMessage(

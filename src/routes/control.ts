@@ -815,22 +815,48 @@ export function simulateReaction(
     });
   }
 
-  // Dispatch message_reaction to all bots in the chat.
+  // Aggregate current reactions across all users for the count variant.
+  const aggregate = new Map<string, { type: "emoji" | "custom_emoji"; key: string; total: number; reaction: unknown }>();
+  for (const r of ts.reactions.findBy("chat_id", input.chatId)) {
+    if (r.message_id !== input.messageId) continue;
+    for (const rx of r.reaction) {
+      const key = rx.type === "emoji" ? `e:${rx.emoji}` : `c:${rx.custom_emoji_id}`;
+      const cur = aggregate.get(key);
+      if (cur) cur.total += 1;
+      else aggregate.set(key, { type: rx.type, key, total: 1, reaction: rx });
+    }
+  }
+  const reactions_count = Array.from(aggregate.values()).map((a) => ({
+    type: a.reaction,
+    total_count: a.total,
+  }));
+
+  // Dispatch message_reaction (per-user) and message_reaction_count
+  // (anonymous aggregate) to all bots in the chat.
   const dispatcher = getDispatcher(store);
   let firstUpdateId = 0;
+  const chatPayload = serializeChat(chat);
+  const date = Math.floor(Date.now() / 1000);
   for (const botId of chat.member_bot_ids) {
     const bot = ts.bots.findOneBy("bot_id", botId);
     if (!bot) continue;
-    const payload = {
-      chat: serializeChat(chat),
+    const perUser = {
+      chat: chatPayload,
       message_id: input.messageId,
       user: serializeUser(user),
-      date: Math.floor(Date.now() / 1000),
+      date,
       old_reaction,
       new_reaction: input.reaction,
     };
-    const upd = dispatcher.enqueue(botId, "message_reaction", payload);
+    const upd = dispatcher.enqueue(botId, "message_reaction", perUser);
     if (firstUpdateId === 0) firstUpdateId = upd.update_id;
+    const countPayload = {
+      chat: chatPayload,
+      message_id: input.messageId,
+      date,
+      reactions: reactions_count,
+    };
+    dispatcher.enqueue(botId, "message_reaction_count", countPayload);
   }
 
   return { update_id: firstUpdateId };

@@ -300,7 +300,8 @@ export type UpdateType =
   | "edited_channel_post"
   | "my_chat_member"
   | "chat_member"
-  | "message_reaction";
+  | "message_reaction"
+  | "message_reaction_count";
 
 export type ChatMemberStatus = "creator" | "administrator" | "member" | "restricted" | "left" | "kicked";
 
