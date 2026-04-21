@@ -1,6 +1,7 @@
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "./store.js";
 import { nextUpdateId } from "./ids.js";
+import { sweep } from "./services/sweeper.js";
 import type { TelegramBot, TelegramUpdate, UpdateType } from "./entities.js";
 
 export interface RetryPolicy {
@@ -66,6 +67,7 @@ export class TelegramDispatcher {
     });
 
     this.pruneQueue(botId);
+    sweep(this.store);
 
     if (bot.webhook_url) {
       if (!isAllowed(bot.webhook_allowed_updates, type)) {
