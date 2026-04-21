@@ -12,19 +12,63 @@ import type {
   TelegramUser,
 } from "./entities.js";
 
-let botIdCounter = 100000;
-let userIdCounter = 1000;
-let fileSequenceCounter = 1;
-let updateSequenceCounter = new Map<number, number>();
-
-export function nextBotId(): number {
-  botIdCounter += 1;
-  return botIdCounter;
+interface TelegramCounters {
+  botId: number;
+  userId: number;
+  fileSequence: number;
+  updateSequence: Map<number, number>;
+  groupChatId: number;
+  supergroupChatId: number;
+  channelChatId: number;
 }
 
-export function nextUserId(): number {
-  userIdCounter += 1;
-  return userIdCounter;
+const COUNTERS_KEY = "telegram.counters";
+
+function getCounters(store: Store): TelegramCounters {
+  let counters = store.getData<TelegramCounters>(COUNTERS_KEY);
+  if (!counters) {
+    counters = {
+      botId: 100000,
+      userId: 1000,
+      fileSequence: 1,
+      updateSequence: new Map(),
+      groupChatId: -1000000000,
+      supergroupChatId: -1001000000000,
+      channelChatId: -1002000000000,
+    };
+    store.setData(COUNTERS_KEY, counters);
+  }
+  return counters;
+}
+
+export function nextBotId(store: Store): number {
+  const c = getCounters(store);
+  c.botId += 1;
+  return c.botId;
+}
+
+export function nextUserId(store: Store): number {
+  const c = getCounters(store);
+  c.userId += 1;
+  return c.userId;
+}
+
+export function nextGroupChatId(store: Store): number {
+  const c = getCounters(store);
+  c.groupChatId -= 1;
+  return c.groupChatId;
+}
+
+export function nextSupergroupChatId(store: Store): number {
+  const c = getCounters(store);
+  c.supergroupChatId -= 1;
+  return c.supergroupChatId;
+}
+
+export function nextChannelChatId(store: Store): number {
+  const c = getCounters(store);
+  c.channelChatId -= 1;
+  return c.channelChatId;
 }
 
 export function generateBotToken(botId: number): string {
@@ -39,27 +83,27 @@ export function parseBotIdFromToken(token: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function nextFileId(botId: number, chatId: number, tier: string): { file_id: string; file_unique_id: string } {
-  fileSequenceCounter += 1;
-  const seq = fileSequenceCounter;
+export function nextFileId(
+  store: Store,
+  botId: number,
+  chatId: number,
+  tier: string,
+): { file_id: string; file_unique_id: string } {
+  const c = getCounters(store);
+  c.fileSequence += 1;
+  const seq = c.fileSequence;
   const raw = `${botId}:${chatId}:${seq}:${tier}`;
   const file_id = `tg_emu_${Buffer.from(raw).toString("base64url")}`;
   const file_unique_id = `uq_${createHash("sha1").update(raw).digest("hex").slice(0, 16)}`;
   return { file_id, file_unique_id };
 }
 
-export function nextUpdateId(botId: number): number {
-  const current = updateSequenceCounter.get(botId) ?? 0;
+export function nextUpdateId(store: Store, botId: number): number {
+  const c = getCounters(store);
+  const current = c.updateSequence.get(botId) ?? 0;
   const next = current + 1;
-  updateSequenceCounter.set(botId, next);
+  c.updateSequence.set(botId, next);
   return next;
-}
-
-export function resetCounters(): void {
-  botIdCounter = 100000;
-  userIdCounter = 1000;
-  fileSequenceCounter = 1;
-  updateSequenceCounter = new Map();
 }
 
 export function ok<T extends Record<string, unknown>>(c: Context, result: T) {
@@ -300,6 +344,7 @@ export function serializeMessage(
 }
 
 export function buildPhotoSizes(
+  store: Store,
   bytes: Buffer,
   botId: number,
   chatId: number,
@@ -314,7 +359,7 @@ export function buildPhotoSizes(
   let originalFileId = "";
   let originalUniqueId = "";
   for (const t of tiers) {
-    const { file_id, file_unique_id } = nextFileId(botId, chatId, t.tier);
+    const { file_id, file_unique_id } = nextFileId(store, botId, chatId, t.tier);
     sizes.push({
       file_id,
       file_unique_id,

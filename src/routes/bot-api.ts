@@ -431,7 +431,7 @@ async function sendPhoto(
     }
   } else if (isMultipartFile(photoInput)) {
     const bytes = photoInput.bytes;
-    const { sizes } = buildPhotoSizes(bytes, bot.bot_id, chatId);
+    const { sizes } = buildPhotoSizes(store, bytes, bot.bot_id, chatId);
     const photoSizesJson = JSON.stringify(sizes);
     for (const size of sizes) {
       ts.files.insert({
@@ -824,7 +824,7 @@ async function sendMediaMessage(
     file_size = file.file_size;
   } else if (isMultipartFile(input)) {
     const bytes = input.bytes;
-    const ids = nextFileId(bot.bot_id, chatId, kind[0]);
+    const ids = nextFileId(store, bot.bot_id, chatId, kind[0]);
     file_id = ids.file_id;
     file_unique_id = ids.file_unique_id;
     file_name = input.name;
@@ -1102,7 +1102,7 @@ async function sendDocument(
     };
   } else if (isMultipartFile(docInput)) {
     const bytes = docInput.bytes;
-    const { file_id, file_unique_id } = nextFileId(bot.bot_id, chatId, "d");
+    const { file_id, file_unique_id } = nextFileId(store, bot.bot_id, chatId, "d");
     ts.files.insert({
       file_id,
       file_unique_id,

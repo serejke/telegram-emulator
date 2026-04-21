@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { Store, WebhookDispatcher, type TokenMap, type AppEnv, authMiddleware } from "@emulators/core";
 import { telegramPlugin } from "../index.js";
-import { resetCounters } from "../helpers.js";
-import { resetControlCounters } from "../routes/control.js";
 import { getDispatcher } from "../dispatcher.js";
 
 export interface TestApp {
@@ -12,9 +10,6 @@ export interface TestApp {
 }
 
 export function createTestApp(options?: { seed?: boolean; baseUrl?: string }): TestApp {
-  resetCounters();
-  resetControlCounters();
-
   const store = new Store();
   const webhooks = new WebhookDispatcher();
   const tokenMap: TokenMap = new Map();

@@ -6,7 +6,10 @@ import {
   generateBotToken,
   generateCallbackQueryId,
   nextBotId,
+  nextChannelChatId,
   nextFileId,
+  nextGroupChatId,
+  nextSupergroupChatId,
   nextUserId,
   parseEntities,
   parseTelegramBody,
@@ -20,36 +23,11 @@ import type { InlineKeyboardMarkup, MessageEntity, TelegramBot, TelegramChat, Te
 
 // Chat ID conventions (match real Telegram):
 //   private:    positive numbers equal to user_id
-//   group:      negative numbers
-//   supergroup: negative -100xxx range
-//   channel:    negative -100xxx range (distinct allocator)
-let nextGroupChatId = -1000000000;
-let nextSupergroupChatId = -1001000000000;
-let nextChannelChatId = -1002000000000;
-
-function allocateGroupChatId(): number {
-  nextGroupChatId -= 1;
-  return nextGroupChatId;
-}
-
-function allocateSupergroupChatId(): number {
-  nextSupergroupChatId -= 1;
-  return nextSupergroupChatId;
-}
-
-function allocateChannelChatId(): number {
-  nextChannelChatId -= 1;
-  return nextChannelChatId;
-}
-
+//   group:      negative numbers (allocator: nextGroupChatId)
+//   supergroup: -100xxx range (allocator: nextSupergroupChatId)
+//   channel:    -100xxx range, distinct allocator (nextChannelChatId)
 function allocatePrivateChatId(userId: number): number {
   return userId;
-}
-
-export function resetControlCounters(): void {
-  nextGroupChatId = -1000000000;
-  nextSupergroupChatId = -1001000000000;
-  nextChannelChatId = -1002000000000;
 }
 
 export interface CreateBotInput {
@@ -86,7 +64,7 @@ export function createBot(store: Store, input: CreateBotInput): TelegramBot {
   const existingByUsername = ts.bots.findOneBy("username", input.username);
   if (existingByUsername) return existingByUsername;
 
-  const bot_id = nextBotId();
+  const bot_id = nextBotId(store);
   const token = input.token ?? generateBotToken(bot_id);
   return ts.bots.insert({
     bot_id,
@@ -109,7 +87,7 @@ export function createUser(store: Store, input: CreateUserInput): TelegramUser {
     const existing = ts.users.findOneBy("username", input.username);
     if (existing) return existing;
   }
-  const user_id = nextUserId();
+  const user_id = nextUserId(store);
   return ts.users.insert({
     user_id,
     is_bot: false,
@@ -152,7 +130,7 @@ export function createPrivateChat(store: Store, input: CreatePrivateChatInput): 
 
 export function createGroupChat(store: Store, input: CreateGroupChatInput): TelegramChat {
   const ts = getTelegramStore(store);
-  const chatId = input.type === "supergroup" ? allocateSupergroupChatId() : allocateGroupChatId();
+  const chatId = input.type === "supergroup" ? nextSupergroupChatId(store) : nextGroupChatId(store);
   return ts.chats.insert({
     chat_id: chatId,
     type: input.type ?? "group",
@@ -182,7 +160,7 @@ export interface CreateChannelInput {
 
 export function createChannel(store: Store, input: CreateChannelInput): TelegramChat {
   const ts = getTelegramStore(store);
-  const chatId = allocateChannelChatId();
+  const chatId = nextChannelChatId(store);
   return ts.chats.insert({
     chat_id: chatId,
     type: "channel",
@@ -386,7 +364,7 @@ export function simulateUserMedia(
   }
   const firstBotId = chat.member_bot_ids[0];
   const ownerBot = firstBotId ?? 0;
-  const { file_id, file_unique_id } = nextFileIdForKind(ownerBot, input.chatId, input.kind);
+  const { file_id, file_unique_id } = nextFileIdForKind(store, ownerBot, input.chatId, input.kind);
   ts.files.insert({
     file_id,
     file_unique_id,
@@ -431,8 +409,13 @@ export function simulateUserMedia(
   return { message_id: msg.message_id, update_id: firstUpdateId, file_id };
 }
 
-function nextFileIdForKind(botId: number, chatId: number, kind: string): { file_id: string; file_unique_id: string } {
-  return nextFileId(botId, chatId, kind[0]);
+function nextFileIdForKind(
+  store: Store,
+  botId: number,
+  chatId: number,
+  kind: string,
+): { file_id: string; file_unique_id: string } {
+  return nextFileId(store, botId, chatId, kind[0]);
 }
 
 function defaultMimeForMediaKind(kind: string): string {
@@ -597,7 +580,7 @@ export function simulateUserPhoto(
     throw new Error(`chat ${input.chatId} has no bots to receive the photo`);
   }
 
-  const { sizes } = buildPhotoSizes(input.photoBytes, firstBotId, input.chatId);
+  const { sizes } = buildPhotoSizes(store, input.photoBytes, firstBotId, input.chatId);
   const photoSizesJson = JSON.stringify(sizes);
   for (const size of sizes) {
     ts.files.insert({

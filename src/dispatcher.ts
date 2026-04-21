@@ -49,7 +49,7 @@ export class TelegramDispatcher {
       throw new Error(`enqueue: bot ${botId} not found`);
     }
 
-    const update_id = nextUpdateId(botId);
+    const update_id = nextUpdateId(this.store, botId);
     const mode: TelegramUpdate["delivery_mode"] = bot.webhook_url ? "webhook" : "pending";
 
     const inserted = ts.updates.insert({
