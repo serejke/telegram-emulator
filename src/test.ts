@@ -202,8 +202,15 @@ interface JsonResponse<T> {
   [key: string]: unknown;
 }
 
-async function postJson<T>(baseUrl: string, path: string, body: unknown): Promise<JsonResponse<T>> {
-  const res = await fetch(`${baseUrl}${path}`, {
+type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
+
+async function postJsonOuter<T>(
+  fetchImpl: FetchImpl,
+  baseUrl: string,
+  path: string,
+  body: unknown,
+): Promise<JsonResponse<T>> {
+  const res = await fetchImpl(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -217,8 +224,8 @@ async function postJson<T>(baseUrl: string, path: string, body: unknown): Promis
   return parsed;
 }
 
-async function getJson<T>(baseUrl: string, path: string): Promise<JsonResponse<T>> {
-  const res = await fetch(`${baseUrl}${path}`);
+async function getJsonOuter<T>(fetchImpl: FetchImpl, baseUrl: string, path: string): Promise<JsonResponse<T>> {
+  const res = await fetchImpl(`${baseUrl}${path}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GET ${path} failed: ${res.status} ${text}`);
@@ -226,9 +233,26 @@ async function getJson<T>(baseUrl: string, path: string): Promise<JsonResponse<T
   return (await res.json()) as JsonResponse<T>;
 }
 
-export function createTelegramTestClient(baseUrl: string): TelegramTestClient {
+export interface CreateTelegramTestClientOptions {
+  /** Override the HTTP client used for control-plane calls. Useful in
+   *  tests that want to drive a Hono app in-process via `app.request`
+   *  without booting a real HTTP server. Defaults to global fetch. */
+  fetchImpl?: FetchImpl;
+}
+
+export function createTelegramTestClient(
+  baseUrl: string,
+  options?: CreateTelegramTestClientOptions,
+): TelegramTestClient {
   const stripTrailingSlash = baseUrl.replace(/\/+$/, "");
   const root = stripTrailingSlash;
+  const fetchImpl: FetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init));
+  // Local closures shadowing the top-level postJson/getJson names so the
+  // existing call sites below still look like postJson(root, ...) without
+  // needing to thread fetchImpl through each one.
+  const postJson = <T>(r: string, path: string, body: unknown) =>
+    postJsonOuter<T>(fetchImpl, r, path, body);
+  const getJson = <T>(r: string, path: string) => getJsonOuter<T>(fetchImpl, r, path);
 
   return {
     baseUrl: root,
