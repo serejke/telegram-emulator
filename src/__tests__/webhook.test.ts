@@ -3,6 +3,7 @@ import { createTestApp, postJson, json, type TestApp } from "./helpers.js";
 import { getTelegramStore } from "../store.js";
 import { getDispatcher } from "../dispatcher.js";
 import { createBot, createPrivateChat, createUser, simulateUserMessage } from "../routes/control.js";
+import type { WireUpdate } from "../types/wire/index.js";
 
 describe("Telegram webhook delivery", () => {
   let tx: TestApp;
@@ -42,8 +43,9 @@ describe("Telegram webhook delivery", () => {
     expect(received).toHaveLength(1);
     expect(received[0].url).toBe("https://example.com/webhook");
     expect(received[0].headers["x-telegram-bot-api-secret-token"]).toBe("sekret");
-    const body = received[0].body as { update_id: number; message: { text: string } };
+    const body = received[0].body as WireUpdate;
     expect(body.update_id).toBe(1);
+    if (!("message" in body)) throw new Error("expected message update");
     expect(body.message.text).toBe("hello");
   });
 

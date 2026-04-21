@@ -1,4 +1,8 @@
 import { telegramPaths } from "./paths.js";
+import type {
+  WireMessageEntity,
+  WireReplyMarkup,
+} from "./types/wire/index.js";
 
 /**
  * Programmatic test client for the Telegram emulator.
@@ -46,11 +50,11 @@ export interface TestMessage {
   from?: { id: number; is_bot: boolean; first_name: string; username?: string };
   date: number;
   text?: string;
-  entities?: unknown[];
+  entities?: WireMessageEntity[];
   photo?: Array<{ file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }>;
   caption?: string;
   reply_to_message_id?: number;
-  reply_markup?: Record<string, unknown>;
+  reply_markup?: WireReplyMarkup;
   edit_date?: number;
 }
 
@@ -188,7 +192,7 @@ export interface TelegramTestClient {
   } | null>;
 
   getDraftHistory(input: { chatId: number; draftId: number }): Promise<
-    Array<{ seq: number; text: string; entities?: unknown[]; bot_id: number }>
+    Array<{ seq: number; text: string; entities?: WireMessageEntity[]; bot_id: number }>
   >;
 
   getSentMessages(input: { chatId: number }): Promise<TestMessage[]>;
@@ -197,10 +201,11 @@ export interface TelegramTestClient {
   reset(): Promise<void>;
 }
 
-interface JsonResponse<T> {
-  ok: true;
-  [key: string]: unknown;
-}
+// T is the expected non-envelope keys of the response body (e.g.
+// { bot: TestBot } for the create-bot endpoint). The envelope itself
+// adds `ok: true` on success. The client calls postJson<{ X: Y }>()
+// per endpoint — no index signature, so typos surface at the call.
+type JsonResponse<T> = T & { ok: true };
 
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -258,88 +263,99 @@ export function createTelegramTestClient(
     baseUrl: root,
 
     async createBot(input) {
-      const r = await postJson(root, telegramPaths.bots(), input);
-      return r.bot as TestBot;
+      const r = await postJson<{ bot: TestBot }>(root, telegramPaths.bots(), input);
+      return r.bot;
     },
 
     async createUser(input) {
-      const r = await postJson(root, telegramPaths.users(), input);
-      return r.user as TestUser;
+      const r = await postJson<{ user: TestUser }>(root, telegramPaths.users(), input);
+      return r.user;
     },
 
     async createPrivateChat(input) {
-      const r = await postJson(root, telegramPaths.privateChat(), input);
-      return r.chat as TestChat;
+      const r = await postJson<{ chat: TestChat }>(root, telegramPaths.privateChat(), input);
+      return r.chat;
     },
 
     async createGroupChat(input) {
-      const r = await postJson(root, telegramPaths.groupChat(), input);
-      return r.chat as TestChat;
+      const r = await postJson<{ chat: TestChat }>(root, telegramPaths.groupChat(), input);
+      return r.chat;
     },
 
     async sendUserMessage(input) {
-      const r = await postJson(root, telegramPaths.chatMessages(input.chatId), {
-        userId: input.userId,
-        text: input.text,
-        replyToMessageId: input.replyToMessageId,
-      });
-      return { message_id: r.message_id as number, update_id: r.update_id as number };
+      const r = await postJson<{ message_id: number; update_id: number }>(
+        root,
+        telegramPaths.chatMessages(input.chatId),
+        {
+          userId: input.userId,
+          text: input.text,
+          replyToMessageId: input.replyToMessageId,
+        },
+      );
+      return { message_id: r.message_id, update_id: r.update_id };
     },
 
     async sendUserPhoto(input) {
       const buf = Buffer.isBuffer(input.photoBytes) ? input.photoBytes : Buffer.from(input.photoBytes);
-      const r = await postJson(root, telegramPaths.chatPhotos(input.chatId), {
-        userId: input.userId,
-        photoBase64: buf.toString("base64"),
-        mimeType: input.mimeType,
-        caption: input.caption,
-      });
+      const r = await postJson<{ message_id: number; update_id: number; file_id: string }>(
+        root,
+        telegramPaths.chatPhotos(input.chatId),
+        {
+          userId: input.userId,
+          photoBase64: buf.toString("base64"),
+          mimeType: input.mimeType,
+          caption: input.caption,
+        },
+      );
       return {
-        message_id: r.message_id as number,
-        update_id: r.update_id as number,
-        file_id: r.file_id as string,
+        message_id: r.message_id,
+        update_id: r.update_id,
+        file_id: r.file_id,
       };
     },
 
     async clickInlineButton(input) {
-      const r = await postJson(root, telegramPaths.chatCallbacks(input.chatId), {
-        userId: input.userId,
-        messageId: input.messageId,
-        data: input.callbackData,
-      });
-      return {
-        callback_query_id: r.callback_query_id as string,
-        update_id: r.update_id as number,
-      };
+      const r = await postJson<{ callback_query_id: string; update_id: number }>(
+        root,
+        telegramPaths.chatCallbacks(input.chatId),
+        {
+          userId: input.userId,
+          messageId: input.messageId,
+          data: input.callbackData,
+        },
+      );
+      return { callback_query_id: r.callback_query_id, update_id: r.update_id };
     },
 
     async editUserMessage(input) {
-      const r = await postJson(root, telegramPaths.chatEdits(input.chatId), {
-        messageId: input.messageId,
-        userId: input.userId,
-        text: input.text,
-      });
-      return { update_id: r.update_id as number };
+      const r = await postJson<{ update_id: number }>(
+        root,
+        telegramPaths.chatEdits(input.chatId),
+        { messageId: input.messageId, userId: input.userId, text: input.text },
+      );
+      return { update_id: r.update_id };
     },
 
     async addBotToChat(input) {
-      const r = await postJson(root, telegramPaths.chatAddBot(input.chatId), {
-        botId: input.botId,
-        byUserId: input.byUserId,
-      });
-      return { update_id: r.update_id as number };
+      const r = await postJson<{ update_id: number }>(
+        root,
+        telegramPaths.chatAddBot(input.chatId),
+        { botId: input.botId, byUserId: input.byUserId },
+      );
+      return { update_id: r.update_id };
     },
 
     async removeBotFromChat(input) {
-      const r = await postJson(root, telegramPaths.chatRemoveBot(input.chatId), {
-        botId: input.botId,
-        byUserId: input.byUserId,
-      });
-      return { update_id: r.update_id as number };
+      const r = await postJson<{ update_id: number }>(
+        root,
+        telegramPaths.chatRemoveBot(input.chatId),
+        { botId: input.botId, byUserId: input.byUserId },
+      );
+      return { update_id: r.update_id };
     },
 
     async promoteChatMember(input) {
-      await postJson(root, telegramPaths.chatPromote(input.chatId), {
+      await postJson<{ chat: TestChat }>(root, telegramPaths.chatPromote(input.chatId), {
         userId: input.userId,
         botId: input.botId,
         demote: input.demote,
@@ -347,71 +363,79 @@ export function createTelegramTestClient(
     },
 
     async reactToMessage(input) {
-      const r = await postJson(root, telegramPaths.chatReactions(input.chatId), {
-        messageId: input.messageId,
-        userId: input.userId,
-        reaction: input.reaction,
-      });
-      return { update_id: r.update_id as number };
+      const r = await postJson<{ update_id: number }>(
+        root,
+        telegramPaths.chatReactions(input.chatId),
+        { messageId: input.messageId, userId: input.userId, reaction: input.reaction },
+      );
+      return { update_id: r.update_id };
     },
 
     async createSupergroup(input) {
-      const r = await postJson(root, telegramPaths.supergroup(), input);
-      return r.chat as TestChat;
+      const r = await postJson<{ chat: TestChat }>(root, telegramPaths.supergroup(), input);
+      return r.chat;
     },
 
     async createChannel(input) {
-      const r = await postJson(root, telegramPaths.channel(), input);
-      return r.chat as TestChat;
+      const r = await postJson<{ chat: TestChat }>(root, telegramPaths.channel(), input);
+      return r.chat;
     },
 
     async createForumTopic(input) {
-      const r = await postJson(root, telegramPaths.chatTopics(input.chatId), { name: input.name });
-      return { message_thread_id: r.message_thread_id as number, name: r.name as string };
+      const r = await postJson<{ message_thread_id: number; name: string }>(
+        root,
+        telegramPaths.chatTopics(input.chatId),
+        { name: input.name },
+      );
+      return { message_thread_id: r.message_thread_id, name: r.name };
     },
 
     async postAsChannel(input) {
-      const r = await postJson(root, telegramPaths.channelPosts(input.chatId), {
-        text: input.text,
-        caption: input.caption,
-        reply_to_message_id: input.replyToMessageId,
-        message_thread_id: input.messageThreadId,
-      });
-      return { message_id: r.message_id as number, update_id: r.update_id as number };
+      const r = await postJson<{ message_id: number; update_id: number }>(
+        root,
+        telegramPaths.channelPosts(input.chatId),
+        {
+          text: input.text,
+          caption: input.caption,
+          reply_to_message_id: input.replyToMessageId,
+          message_thread_id: input.messageThreadId,
+        },
+      );
+      return { message_id: r.message_id, update_id: r.update_id };
     },
 
     async editChannelPost(input) {
-      const r = await postJson(root, telegramPaths.channelPostEdits(input.chatId), {
-        messageId: input.messageId,
-        text: input.text,
-        caption: input.caption,
-      });
-      return { message_id: r.message_id as number, update_id: r.update_id as number };
+      const r = await postJson<{ message_id: number; update_id: number }>(
+        root,
+        telegramPaths.channelPostEdits(input.chatId),
+        { messageId: input.messageId, text: input.text, caption: input.caption },
+      );
+      return { message_id: r.message_id, update_id: r.update_id };
     },
 
     async sendUserMedia(input) {
       const buf = Buffer.isBuffer(input.bytes) ? input.bytes : Buffer.from(input.bytes);
-      const r = await postJson(root, telegramPaths.chatMedia(input.chatId), {
-        userId: input.userId,
-        kind: input.kind,
-        bytesBase64: buf.toString("base64"),
-        mimeType: input.mimeType,
-        caption: input.caption,
-        duration: input.duration,
-        width: input.width,
-        height: input.height,
-        fileName: input.fileName,
-        messageThreadId: input.messageThreadId,
-      });
-      return {
-        message_id: r.message_id as number,
-        update_id: r.update_id as number,
-        file_id: r.file_id as string,
-      };
+      const r = await postJson<{ message_id: number; update_id: number; file_id: string }>(
+        root,
+        telegramPaths.chatMedia(input.chatId),
+        {
+          userId: input.userId,
+          kind: input.kind,
+          bytesBase64: buf.toString("base64"),
+          mimeType: input.mimeType,
+          caption: input.caption,
+          duration: input.duration,
+          width: input.width,
+          height: input.height,
+          fileName: input.fileName,
+          messageThreadId: input.messageThreadId,
+        },
+      );
+      return { message_id: r.message_id, update_id: r.update_id, file_id: r.file_id };
     },
 
     async injectFault(input) {
-      const r = await postJson(root, telegramPaths.faults(), {
+      const r = await postJson<{ fault_id: number }>(root, telegramPaths.faults(), {
         bot_id: input.botId,
         method: input.method,
         error_code: input.errorCode,
@@ -419,7 +443,7 @@ export function createTelegramTestClient(
         retry_after: input.retryAfter,
         count: input.count,
       });
-      return { fault_id: r.fault_id as number };
+      return { fault_id: r.fault_id };
     },
 
     async clearFaults() {
@@ -443,22 +467,30 @@ export function createTelegramTestClient(
     },
 
     async getDraftHistory(input) {
-      const r = await getJson(root, telegramPaths.chatDraft(input.chatId, input.draftId));
-      return r.snapshots as Array<{ seq: number; text: string; entities?: unknown[]; bot_id: number }>;
+      const r = await getJson<{
+        snapshots: Array<{ seq: number; text: string; entities?: WireMessageEntity[]; bot_id: number }>;
+      }>(root, telegramPaths.chatDraft(input.chatId, input.draftId));
+      return r.snapshots;
     },
 
     async getSentMessages(input) {
-      const r = await getJson(root, `${telegramPaths.chatMessages(input.chatId)}?scope=bot`);
-      return r.messages as TestMessage[];
+      const r = await getJson<{ messages: TestMessage[] }>(
+        root,
+        `${telegramPaths.chatMessages(input.chatId)}?scope=bot`,
+      );
+      return r.messages;
     },
 
     async getAllMessages(input) {
-      const r = await getJson(root, `${telegramPaths.chatMessages(input.chatId)}?scope=all`);
-      return r.messages as TestMessage[];
+      const r = await getJson<{ messages: TestMessage[] }>(
+        root,
+        `${telegramPaths.chatMessages(input.chatId)}?scope=all`,
+      );
+      return r.messages;
     },
 
     async reset() {
-      await postJson(root, telegramPaths.reset(), {});
+      await postJson<Record<string, never>>(root, telegramPaths.reset(), {});
     },
   };
 }

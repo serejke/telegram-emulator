@@ -9,6 +9,7 @@ import {
   simulateCallback,
   simulateUserMessage,
 } from "../routes/control.js";
+import type { WireMessage, WireUpdate } from "../types/wire/index.js";
 
 describe("Telegram Bot API - getMe", () => {
   let tx: TestApp;
@@ -21,7 +22,10 @@ describe("Telegram Bot API - getMe", () => {
     const bot = getTelegramStore(tx.store).bots.all()[0]!;
     const res = await postJson(tx.app, `/bot${bot.token}/getMe`, {});
     expect(res.status).toBe(200);
-    const body = await json<{ ok: boolean; result: Record<string, unknown> }>(res);
+    const body = await json<{
+      ok: boolean;
+      result: { id: number; is_bot: boolean; username: string };
+    }>(res);
     expect(body.ok).toBe(true);
     expect(body.result.id).toBe(bot.bot_id);
     expect(body.result.is_bot).toBe(true);
@@ -54,13 +58,13 @@ describe("Telegram Bot API - sendMessage / DM round-trip", () => {
       text: "hello there",
     });
 
-    const body = await json<{ ok: boolean; result: Record<string, unknown> }>(res);
+    const body = await json<{ ok: boolean; result: WireMessage }>(res);
     expect(body.ok).toBe(true);
     const msg = body.result;
     expect(msg.text).toBe("hello there");
     expect(msg.message_id).toBe(1);
-    expect((msg.chat as { id: number }).id).toBe(dm.chat_id);
-    expect((msg.from as { id: number; is_bot: boolean }).id).toBe(bot.bot_id);
+    expect(msg.chat.id).toBe(dm.chat_id);
+    expect(msg.from?.id).toBe(bot.bot_id);
   });
 
   it("rejects sendMessage to a chat the bot is not a member of", async () => {
@@ -93,14 +97,14 @@ describe("Telegram Bot API - getUpdates (long polling)", () => {
     simulateUserMessage(tx.store, { chatId: dm.chat_id, userId: user.user_id, text: "hello from alice" });
 
     const res = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
-    const body = await json<{ ok: boolean; result: Array<Record<string, unknown>> }>(res);
+    const body = await json<{ ok: boolean; result: WireUpdate[] }>(res);
     expect(body.ok).toBe(true);
     expect(body.result.length).toBe(1);
     const upd = body.result[0];
     expect(upd.update_id).toBe(1);
-    const message = upd.message as { text: string; from: { id: number } };
-    expect(message.text).toBe("hello from alice");
-    expect(message.from.id).toBe(user.user_id);
+    if (!("message" in upd)) throw new Error("expected message update");
+    expect(upd.message.text).toBe("hello from alice");
+    expect(upd.message.from?.id).toBe(user.user_id);
   });
 
   it("offset confirms prior updates so they don't come back", async () => {

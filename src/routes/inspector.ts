@@ -9,6 +9,7 @@ import type {
   TelegramMessage,
   TelegramUpdate,
 } from "../entities.js";
+import { isInlineKeyboardMarkup } from "../types/wire/reply-markup.js";
 
 const SERVICE_LABEL = "Telegram";
 
@@ -44,17 +45,17 @@ function renderPhoto(msg: TelegramMessage, botToken: string): string {
 }
 
 function renderReplyMarkup(msg: TelegramMessage): string {
-  const rm = msg.reply_markup as Record<string, unknown> | undefined;
+  const rm = msg.reply_markup;
   if (!rm) return "";
-  if (Array.isArray((rm as { inline_keyboard?: unknown }).inline_keyboard)) {
-    const rows = (rm.inline_keyboard as Array<Array<{ text: string; callback_data?: string }>>) ?? [];
-    const buttons = rows
-      .flat()
-      .map((b) => `<span class="badge badge-requested">${escapeHtml(b.text)}${b.callback_data ? ` → ${escapeHtml(b.callback_data)}` : ""}</span>`)
-      .join(" ");
-    return `<div style="margin-top:4px">${buttons}</div>`;
-  }
-  return "";
+  if (!isInlineKeyboardMarkup(rm)) return "";
+  const buttons = rm.inline_keyboard
+    .flat()
+    .map(
+      (b) =>
+        `<span class="badge badge-requested">${escapeHtml(b.text)}${b.callback_data ? ` → ${escapeHtml(b.callback_data)}` : ""}</span>`,
+    )
+    .join(" ");
+  return `<div style="margin-top:4px">${buttons}</div>`;
 }
 
 function renderDocument(msg: TelegramMessage): string {

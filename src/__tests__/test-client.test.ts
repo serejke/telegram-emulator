@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { Store, WebhookDispatcher, authMiddleware, type AppEnv } from "@emulators/core";
 import { telegramPlugin } from "../index.js";
 import { createTelegramTestClient } from "../test.js";
+import type { WireMessage, WireUpdate } from "../types/wire/index.js";
 
 describe("Telegram test client + in-process HTTP round-trip", () => {
   let app: Hono<AppEnv>;
@@ -37,20 +38,19 @@ describe("Telegram test client + in-process HTTP round-trip", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: dm.id, text: "hello from bot" }),
     });
-    const sendBody = (await sendRes.json()) as { ok: boolean; result: { text: string } };
+    const sendBody = (await sendRes.json()) as { ok: boolean; result: WireMessage };
     expect(sendBody.ok).toBe(true);
     expect(sendBody.result.text).toBe("hello from bot");
 
     await tg.sendUserMessage({ chatId: dm.id, userId: user.id, text: "/connect ABC123" });
 
     const updatesRes = await app.request(`${baseUrl}/bot${bot.token}/getUpdates`);
-    const updates = (await updatesRes.json()) as {
-      ok: boolean;
-      result: Array<{ message: { text: string; entities: Array<{ type: string }> } }>;
-    };
+    const updates = (await updatesRes.json()) as { ok: boolean; result: WireUpdate[] };
     expect(updates.result).toHaveLength(1);
-    expect(updates.result[0].message.text).toBe("/connect ABC123");
-    expect(updates.result[0].message.entities[0].type).toBe("bot_command");
+    const first = updates.result[0];
+    if (!("message" in first)) throw new Error("expected message update");
+    expect(first.message.text).toBe("/connect ABC123");
+    expect(first.message.entities?.[0].type).toBe("bot_command");
 
     const all = await tg.getAllMessages({ chatId: dm.id });
     expect(all).toHaveLength(2);
@@ -83,7 +83,7 @@ describe("Telegram test client + in-process HTTP round-trip", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: dm.id, photo: up.file_id, caption: "echo" }),
     });
-    const body = (await send.json()) as { ok: boolean; result: { photo: unknown[] } };
+    const body = (await send.json()) as { ok: boolean; result: WireMessage };
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.result.photo)).toBe(true);
   });

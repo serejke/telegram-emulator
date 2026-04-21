@@ -370,13 +370,12 @@ describe("Integration — rich media", () => {
         kind: field,
       });
 
-      const body: Record<string, unknown> = { chat_id: dm.chat_id, [field]: `seed_${field}` };
+      const body: { [key: string]: unknown } = { chat_id: dm.chat_id, [field]: `seed_${field}` };
       if (field !== "sticker") body.caption = "c";
       const res = await postJson(tx.app, `/bot${bot.token}/${method}`, body);
       expect(res.status).toBe(200);
-      const result = (await json<{ result: Record<string, unknown> }>(res)).result;
-      const media = result[field] as { file_id: string };
-      expect(media.file_id).toBe(`seed_${field}`);
+      const result = (await json<{ result: { [key: string]: { file_id: string } } }>(res)).result;
+      expect(result[field].file_id).toBe(`seed_${field}`);
     });
   }
 
@@ -582,7 +581,13 @@ describe("Integration — callback answer reader", () => {
 
     const httpAnswer = await tx.app.request(`http://localhost:4007/_emu/telegram/callbacks/${id}`);
     expect(httpAnswer.status).toBe(200);
-    const httpBody = (await httpAnswer.json()) as { answer_text: string };
+    const httpBody = (await httpAnswer.json()) as {
+      ok: true;
+      callback_query_id: string;
+      answered: boolean;
+      answer_text: string;
+      answer_show_alert?: boolean;
+    };
     expect(httpBody.answer_text).toBe("Yes!");
   });
 });

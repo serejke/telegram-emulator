@@ -59,7 +59,7 @@ describe("MarkdownV2 parser", () => {
     const r = parseMarkdownV2("[me](tg://user?id=42)");
     expect(r.text).toBe("me");
     expect(r.entities[0]).toMatchObject({ type: "text_mention", offset: 0, length: 2 });
-    expect((r.entities[0] as { user: { id: number } }).user.id).toBe(42);
+    expect(r.entities[0].user?.id).toBe(42);
   });
 
   it("rejects unescaped reserved character (period)", () => {
@@ -119,7 +119,7 @@ describe("HTML parser", () => {
   it("extracts text_mention from tg://user", () => {
     const r = parseHtml('<a href="tg://user?id=42">me</a>');
     expect(r.entities[0].type).toBe("text_mention");
-    expect((r.entities[0] as { user: { id: number } }).user.id).toBe(42);
+    expect(r.entities[0].user?.id).toBe(42);
   });
 
   it("decodes HTML entities (&amp; &lt; &gt; &quot;)", () => {
