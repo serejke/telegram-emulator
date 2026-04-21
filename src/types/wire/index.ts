@@ -6,3 +6,7 @@ export * from "./user.js";
 export * from "./chat.js";
 export * from "./message.js";
 export * from "./chat-member.js";
+export * from "./callback-query.js";
+export * from "./chat-member-updated.js";
+export * from "./reaction-update.js";
+export * from "./update.js";

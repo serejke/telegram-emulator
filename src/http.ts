@@ -23,13 +23,18 @@ export function tgError(
   return c.json({ ok: false, error_code, description }, status);
 }
 
-export async function parseTelegramBody(c: Context): Promise<Record<string, unknown>> {
+// Transport-layer parser. Returns raw JSON — narrowing is the job of
+// zod validators downstream (see src/types/validators/body.ts). The
+// shape is effectively { [key: string]: unknown } at runtime for
+// successful parses, but declaring it as `unknown` forces every
+// consumer to go through a schema before touching fields.
+export async function parseTelegramBody(c: Context): Promise<unknown> {
   const contentType = c.req.header("Content-Type") ?? "";
 
   if (contentType.includes("application/json")) {
     try {
       const raw = await c.req.text();
-      return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      return raw ? JSON.parse(raw) : {};
     } catch {
       return {};
     }
@@ -38,7 +43,7 @@ export async function parseTelegramBody(c: Context): Promise<Record<string, unkn
   if (contentType.includes("application/x-www-form-urlencoded")) {
     const raw = await c.req.text();
     const params = new URLSearchParams(raw);
-    const result: Record<string, unknown> = {};
+    const result: { [key: string]: unknown } = {};
     for (const [key, value] of params) {
       result[key] = tryParseJsonScalar(value);
     }
@@ -47,7 +52,7 @@ export async function parseTelegramBody(c: Context): Promise<Record<string, unkn
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await c.req.formData();
-    const result: Record<string, unknown> = {};
+    const result: { [key: string]: unknown } = {};
     for (const [key, value] of formData.entries()) {
       if (typeof value !== "string" && typeof (value as File).arrayBuffer === "function") {
         const file = value as File;

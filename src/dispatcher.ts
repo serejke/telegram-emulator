@@ -3,6 +3,7 @@ import { getTelegramStore } from "./store.js";
 import { nextUpdateId } from "./ids.js";
 import { sweep } from "./services/sweeper.js";
 import type { TelegramBot, TelegramUpdate, UpdateType } from "./entities.js";
+import { wrapPayload, type PayloadFor } from "./types/wire/update.js";
 
 export interface RetryPolicy {
   maxRetries: number;
@@ -48,7 +49,11 @@ export class TelegramDispatcher {
     this.backoffEnabled = enabled;
   }
 
-  enqueue(botId: number, type: UpdateType, payload: object): TelegramUpdate {
+  enqueue<T extends UpdateType>(
+    botId: number,
+    type: T,
+    payload: PayloadFor<T>,
+  ): TelegramUpdate {
     const ts = getTelegramStore(this.store);
     const bot = ts.bots.findOneBy("bot_id", botId);
     if (!bot) {
@@ -62,7 +67,7 @@ export class TelegramDispatcher {
       update_id,
       for_bot_id: botId,
       type,
-      payload: { update_id, [type]: payload },
+      payload: wrapPayload(update_id, type, payload),
       delivered: false,
       delivered_at: null,
       delivery_mode: mode,

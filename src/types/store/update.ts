@@ -1,4 +1,6 @@
 import type { Entity } from "@emulators/core";
+import type { WireBotAsUser, WireUser } from "../wire/user.js";
+import type { WireUpdate } from "../wire/update.js";
 
 export type UpdateType =
   | "message"
@@ -15,16 +17,14 @@ export type ChatMemberStatus = "creator" | "administrator" | "member" | "restric
 
 export interface ChatMemberLike {
   status: ChatMemberStatus;
-  // Tightened to WireUser in Phase 6.
-  user: Record<string, unknown>;
+  user: WireUser | WireBotAsUser;
 }
 
 export interface TelegramUpdate extends Entity {
   update_id: number;
   for_bot_id: number;
   type: UpdateType;
-  // Tightened to WireUpdate in Phase 6.
-  payload: Record<string, unknown>;
+  payload: WireUpdate;
   delivered: boolean;
   delivered_at: string | null;
   delivery_mode: "webhook" | "polling" | "pending";

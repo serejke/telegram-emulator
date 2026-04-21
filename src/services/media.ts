@@ -1,7 +1,16 @@
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { nextFileId } from "../ids.js";
-import type { PhotoSize, TelegramChat } from "../entities.js";
+import type {
+  PhotoSize,
+  TelegramAnimation,
+  TelegramAudio,
+  TelegramChat,
+  TelegramDocument,
+  TelegramSticker,
+  TelegramVideo,
+  TelegramVoice,
+} from "../entities.js";
 
 export type MediaKind = "video" | "animation" | "audio" | "voice" | "sticker" | "document";
 
@@ -22,15 +31,27 @@ export interface MediaFieldInput {
   is_video?: boolean;
 }
 
+// Discriminated union across every kind buildMediaField can emit.
+// Each branch is the canonical Bot API wire shape for that field —
+// no `kind` tag (the key of TelegramMessage that holds it acts as
+// the discriminator in the store row).
+export type WireMediaField =
+  | TelegramVideo
+  | TelegramAnimation
+  | TelegramAudio
+  | TelegramVoice
+  | TelegramSticker
+  | TelegramDocument;
+
 /** Build the media field object (video/animation/audio/voice/sticker/document)
  *  that lives on a Message, normalised so both the Bot API surface and
  *  the control-plane simulate routes emit identical shapes. */
-export function buildMediaField(input: MediaFieldInput): Record<string, unknown> {
-  const base: Record<string, unknown> = {
+export function buildMediaField(input: MediaFieldInput): WireMediaField {
+  const base = {
     file_id: input.file_id,
     file_unique_id: input.file_unique_id,
+    file_size: input.file_size,
   };
-  if (input.file_size !== undefined) base.file_size = input.file_size;
   switch (input.kind) {
     case "video":
     case "animation":
@@ -67,13 +88,12 @@ export function buildMediaField(input: MediaFieldInput): Record<string, unknown>
         emoji: input.emoji,
       };
     case "document":
+    default:
       return {
         ...base,
         file_name: input.file_name,
         mime_type: input.mime_type,
       };
-    default:
-      return base;
   }
 }
 

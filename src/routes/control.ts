@@ -11,7 +11,6 @@ import {
   nextSupergroupChatId,
   nextUserId,
 } from "../ids.js";
-import { parseTelegramBody } from "../http.js";
 import { parseJsonBody } from "../types/validators/body.js";
 import {
   zChatMembershipInput,
@@ -56,7 +55,15 @@ import type {
   TelegramMessage,
   TelegramUser,
 } from "../entities.js";
-import type { WireMessage } from "../types/wire/index.js";
+import type {
+  WireCallbackQuery,
+  WireChatMemberUpdated,
+  WireMessage,
+  WireMessageReactionCountUpdated,
+  WireMessageReactionUpdated,
+  WireReactionCount,
+} from "../types/wire/index.js";
+import type { ReactionType } from "../types/wire/reaction.js";
 
 // Chat ID conventions (match real Telegram):
 //   private:    positive numbers equal to user_id
@@ -630,7 +637,7 @@ export function simulateCallback(
   if (!user) throw new Error(`user ${input.userId} not found`);
 
   const dispatcher = getDispatcher(store);
-  const payload = {
+  const payload: WireCallbackQuery = {
     id,
     from: serializeUser(user),
     chat_instance: String(input.chatId),
@@ -659,12 +666,13 @@ export function addBotToChat(
   ts.chats.update(chat.id, { member_bot_ids: [...chat.member_bot_ids, input.botId] });
 
   const dispatcher = getDispatcher(store);
-  const payload = {
+  const botUser = serializeBotAsUser(bot);
+  const payload: WireChatMemberUpdated = {
     chat: serializeChat(chat),
     from: serializeUser(by),
     date: Math.floor(Date.now() / 1000),
-    old_chat_member: { status: "left", user: serializeBotAsUser(bot) },
-    new_chat_member: { status: "member", user: serializeBotAsUser(bot) },
+    old_chat_member: { status: "left", user: botUser },
+    new_chat_member: { status: "member", user: botUser },
   };
   const upd = dispatcher.enqueue(input.botId, "my_chat_member", payload);
   return { update_id: upd.update_id };
@@ -690,12 +698,13 @@ export function removeBotFromChat(
   });
 
   const dispatcher = getDispatcher(store);
-  const payload = {
+  const botUser = serializeBotAsUser(bot);
+  const payload: WireChatMemberUpdated = {
     chat: serializeChat(chat),
     from: serializeUser(by),
     date: Math.floor(Date.now() / 1000),
-    old_chat_member: { status: "member", user: serializeBotAsUser(bot) },
-    new_chat_member: { status: "left", user: serializeBotAsUser(bot) },
+    old_chat_member: { status: "member", user: botUser },
+    new_chat_member: { status: "left", user: botUser },
   };
   const upd = dispatcher.enqueue(input.botId, "my_chat_member", payload);
   return { update_id: upd.update_id };
@@ -740,17 +749,17 @@ export function simulateReaction(
   }
 
   // Aggregate current reactions across all users for the count variant.
-  const aggregate = new Map<string, { type: "emoji" | "custom_emoji"; key: string; total: number; reaction: unknown }>();
+  const aggregate = new Map<string, { total: number; reaction: ReactionType }>();
   for (const r of ts.reactions.findBy("chat_id", input.chatId)) {
     if (r.message_id !== input.messageId) continue;
     for (const rx of r.reaction) {
       const key = rx.type === "emoji" ? `e:${rx.emoji}` : `c:${rx.custom_emoji_id}`;
       const cur = aggregate.get(key);
       if (cur) cur.total += 1;
-      else aggregate.set(key, { type: rx.type, key, total: 1, reaction: rx });
+      else aggregate.set(key, { total: 1, reaction: rx });
     }
   }
-  const reactions_count = Array.from(aggregate.values()).map((a) => ({
+  const reactions_count: WireReactionCount[] = Array.from(aggregate.values()).map((a) => ({
     type: a.reaction,
     total_count: a.total,
   }));
@@ -764,7 +773,7 @@ export function simulateReaction(
   for (const botId of chat.member_bot_ids) {
     const bot = ts.bots.findOneBy("bot_id", botId);
     if (!bot) continue;
-    const perUser = {
+    const perUser: WireMessageReactionUpdated = {
       chat: chatPayload,
       message_id: input.messageId,
       user: serializeUser(user),
@@ -774,7 +783,7 @@ export function simulateReaction(
     };
     const upd = dispatcher.enqueue(botId, "message_reaction", perUser);
     if (firstUpdateId === 0) firstUpdateId = upd.update_id;
-    const countPayload = {
+    const countPayload: WireMessageReactionCountUpdated = {
       chat: chatPayload,
       message_id: input.messageId,
       date,
