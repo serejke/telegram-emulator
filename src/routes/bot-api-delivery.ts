@@ -35,7 +35,9 @@ export async function getUpdates(
   if (bot.webhook_url) {
     return tgError(c, "Conflict: can't use getUpdates method while webhook is active", 409, 409);
   }
-  if (dispatcher.isPolling(bot.bot_id)) {
+
+  const { cancelled, updates } = await dispatcher.getUpdates(bot.bot_id, offset, limit, timeout);
+  if (cancelled) {
     return tgError(
       c,
       "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
@@ -43,8 +45,6 @@ export async function getUpdates(
       409,
     );
   }
-
-  const updates = await dispatcher.getUpdates(bot.bot_id, offset, limit, timeout);
   const filtered =
     allowedUpdates && allowedUpdates.length > 0
       ? updates.filter((u) => allowedUpdates.includes(u.type))

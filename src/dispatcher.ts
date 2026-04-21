@@ -20,12 +20,16 @@ const MAX_DELIVERED_HISTORY = 200;
 interface LongPollWaiter {
   botId: number;
   offset: number;
-  resolve: (updates: TelegramUpdate[]) => void;
+  resolve: (result: GetUpdatesResult) => void;
+}
+
+export interface GetUpdatesResult {
+  cancelled: boolean;
+  updates: TelegramUpdate[];
 }
 
 export class TelegramDispatcher {
   private waiters: LongPollWaiter[] = [];
-  private activePolls = new Set<number>();
   private retryPolicy: RetryPolicy = DEFAULT_RETRY;
   private fetchImpl: typeof fetch = fetch;
   private backoffEnabled = true;
@@ -168,26 +172,36 @@ export class TelegramDispatcher {
     }
   }
 
-  isPolling(botId: number): boolean {
-    return this.activePolls.has(botId);
-  }
-
-  getUpdates(botId: number, offset?: number, limit = 100, timeoutSec = 0): Promise<TelegramUpdate[]> {
-    this.activePolls.add(botId);
-    const release = () => this.activePolls.delete(botId);
-
+  getUpdates(
+    botId: number,
+    offset?: number,
+    limit = 100,
+    timeoutSec = 0,
+  ): Promise<GetUpdatesResult> {
     const ready = this.drain(botId, offset, limit);
+    // Short-poll: drain and return immediately. Does not cancel any
+    // in-flight long-poll — grammY/telegraf's own `bot.stop()` issues
+    // a short getUpdates to ack its last offset, and bubbling a 409
+    // up to the prior poll would break their shutdown path.
     if (ready.length > 0 || timeoutSec === 0) {
-      release();
-      return Promise.resolve(ready);
+      return Promise.resolve({ cancelled: false, updates: ready });
     }
-    return new Promise<TelegramUpdate[]>((resolve) => {
+
+    // Long-poll takeover: real Telegram responds with 409
+    // "terminated by other getUpdates request" to any existing poll
+    // when a new one arrives. This lets a second bot instance take
+    // over cleanly.
+    for (const prior of this.waiters.filter((w) => w.botId === botId)) {
+      const idx = this.waiters.indexOf(prior);
+      if (idx >= 0) this.waiters.splice(idx, 1);
+      prior.resolve({ cancelled: true, updates: [] });
+    }
+    return new Promise<GetUpdatesResult>((resolve) => {
       const waiter: LongPollWaiter = {
         botId,
         offset: offset ?? 0,
-        resolve: (updates) => {
-          release();
-          resolve(updates.slice(0, limit));
+        resolve: (result) => {
+          resolve({ cancelled: result.cancelled, updates: result.updates.slice(0, limit) });
         },
       };
       this.waiters.push(waiter);
@@ -195,8 +209,7 @@ export class TelegramDispatcher {
         const idx = this.waiters.indexOf(waiter);
         if (idx >= 0) {
           this.waiters.splice(idx, 1);
-          release();
-          resolve(this.drain(botId, offset, limit));
+          resolve({ cancelled: false, updates: this.drain(botId, offset, limit) });
         }
       }, timeoutSec * 1000);
       // Unref so the process can exit if only a long-poll is pending.
@@ -245,13 +258,13 @@ export class TelegramDispatcher {
       if (updates.length > 0) {
         const idx = this.waiters.indexOf(waiter);
         if (idx >= 0) this.waiters.splice(idx, 1);
-        waiter.resolve(updates);
+        waiter.resolve({ cancelled: false, updates });
       }
     }
   }
 
   clear(): void {
-    for (const w of this.waiters) w.resolve([]);
+    for (const w of this.waiters) w.resolve({ cancelled: false, updates: [] });
     this.waiters.length = 0;
   }
 }

@@ -190,15 +190,20 @@ describe("Telegram Bot API - getUpdates (long polling)", () => {
     expect(cmd.result).toBe(true);
   });
 
-  it("rejects concurrent getUpdates for the same bot (409)", async () => {
+  it("a new long-poll terminates a prior long-poll with 409 (takeover)", async () => {
     const bot = createBot(tx.store, { username: "b" });
-    const first = postJson(tx.app, `/bot${bot.token}/getUpdates`, { timeout: 1 });
+    const first = postJson(tx.app, `/bot${bot.token}/getUpdates`, { timeout: 2 });
     // Yield so the first request registers its long-poll waiter.
     await new Promise((r) => setImmediate(r));
-    const second = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
-    expect(second.status).toBe(409);
-    await first;
-  }, 3000);
+    const second = postJson(tx.app, `/bot${bot.token}/getUpdates`, { timeout: 1 });
+    // Yield again so the takeover can resolve the first.
+    await new Promise((r) => setImmediate(r));
+    const oldRes = await first;
+    expect(oldRes.status).toBe(409);
+    const newRes = await second;
+    // The new poll also times out without updates but returns 200.
+    expect(newRes.status).toBe(200);
+  }, 4000);
 });
 
 describe("Telegram Bot API - commands and entities", () => {
