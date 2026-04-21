@@ -285,6 +285,52 @@ export function serializeChat(ch: TelegramChat): Record<string, unknown> {
   if (ch.username) out.username = ch.username;
   if (ch.first_name) out.first_name = ch.first_name;
   if (ch.last_name) out.last_name = ch.last_name;
+  if (ch.is_forum) out.is_forum = true;
+  return out;
+}
+
+const DEFAULT_GROUP_PERMISSIONS = {
+  can_send_messages: true,
+  can_send_audios: true,
+  can_send_documents: true,
+  can_send_photos: true,
+  can_send_videos: true,
+  can_send_video_notes: true,
+  can_send_voice_notes: true,
+  can_send_polls: true,
+  can_send_other_messages: true,
+  can_add_web_page_previews: true,
+  can_change_info: false,
+  can_invite_users: true,
+  can_pin_messages: false,
+  can_manage_topics: false,
+};
+
+export function serializeChatFullInfo(
+  ch: TelegramChat,
+  ctx: { store: Store },
+): Record<string, unknown> {
+  const out = serializeChat(ch);
+  out.accent_color_id = ch.accent_color_id ?? 0;
+  out.max_reaction_count = ch.max_reaction_count ?? 11;
+  if (ch.bio) out.bio = ch.bio;
+  if (ch.description) out.description = ch.description;
+  if (ch.invite_link) out.invite_link = ch.invite_link;
+  if (ch.slow_mode_delay !== undefined) out.slow_mode_delay = ch.slow_mode_delay;
+  if (ch.message_auto_delete_time !== undefined) out.message_auto_delete_time = ch.message_auto_delete_time;
+  if (ch.has_protected_content) out.has_protected_content = true;
+  if (ch.linked_chat_id !== undefined) out.linked_chat_id = ch.linked_chat_id;
+  if (ch.available_reactions) out.available_reactions = ch.available_reactions;
+  if (ch.type === "group" || ch.type === "supergroup") {
+    out.permissions = ch.permissions ?? DEFAULT_GROUP_PERMISSIONS;
+  }
+  if (ch.pinned_message_id !== undefined) {
+    const ts = getTelegramStore(ctx.store);
+    const pinned = ts.messages
+      .findBy("chat_id", ch.chat_id)
+      .find((m) => m.message_id === ch.pinned_message_id && !m.deleted);
+    if (pinned) out.pinned_message = serializeMessage(pinned, { store: ctx.store });
+  }
   return out;
 }
 

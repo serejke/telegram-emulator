@@ -11,6 +11,7 @@ import {
   resolveBotFromToken,
   serializeBotAsUser,
   serializeChat,
+  serializeChatFullInfo,
   serializeMessage,
   serializeUser,
   tgError,
@@ -603,7 +604,7 @@ function getChat(
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", chatId);
   if (!chat) return tgError(c, "Bad Request: chat not found");
-  return ok(c, serializeChat(chat));
+  return ok(c, serializeChatFullInfo(chat, { store }));
 }
 
 function getChatMember(

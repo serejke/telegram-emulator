@@ -660,6 +660,32 @@ describe("Integration — small methods", () => {
     expect(body.result).toBe(true);
   });
 
+  it("getChat returns ChatFullInfo shape with permissions + accent_color_id", async () => {
+    const bot = createBot(tx.store, { username: "b" });
+    const u1 = createUser(tx.store, { first_name: "A" });
+    const group = createGroupChat(tx.store, {
+      title: "G",
+      memberIds: [u1.user_id],
+      botIds: [bot.bot_id],
+    });
+    const body = await json<{
+      ok: boolean;
+      result: {
+        id: number;
+        type: string;
+        title: string;
+        accent_color_id: number;
+        max_reaction_count: number;
+        permissions: { can_send_messages: boolean };
+      };
+    }>(await postJson(tx.app, `/bot${bot.token}/getChat`, { chat_id: group.chat_id }));
+    expect(body.result.type).toBe("group");
+    expect(body.result.title).toBe("G");
+    expect(body.result.accent_color_id).toBe(0);
+    expect(body.result.max_reaction_count).toBe(11);
+    expect(body.result.permissions.can_send_messages).toBe(true);
+  });
+
   it("getChatMemberCount returns member + bot count", async () => {
     const bot = createBot(tx.store, { username: "b" });
     const u1 = createUser(tx.store, { first_name: "A" });
