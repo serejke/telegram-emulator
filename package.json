@@ -40,7 +40,8 @@
   },
   "dependencies": {
     "@emulators/core": "workspace:*",
-    "hono": "^4"
+    "hono": "^4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsup": "^8",
