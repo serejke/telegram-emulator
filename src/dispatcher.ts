@@ -1,6 +1,6 @@
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "./store.js";
-import { nextUpdateId } from "./helpers.js";
+import { nextUpdateId } from "./ids.js";
 import type { TelegramBot, TelegramUpdate, UpdateType } from "./entities.js";
 
 export interface RetryPolicy {

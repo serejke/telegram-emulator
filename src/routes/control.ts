@@ -2,7 +2,6 @@ import type { Context } from "hono";
 import type { RouteContext, Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import {
-  buildPhotoSizes,
   generateBotToken,
   generateCallbackQueryId,
   nextBotId,
@@ -11,13 +10,16 @@ import {
   nextGroupChatId,
   nextSupergroupChatId,
   nextUserId,
-  parseEntities,
-  parseTelegramBody,
+} from "../ids.js";
+import { parseTelegramBody } from "../http.js";
+import {
   serializeBotAsUser,
   serializeChat,
   serializeMessage,
   serializeUser,
-} from "../helpers.js";
+} from "../serializers.js";
+import { parseEntities } from "../entity-parser.js";
+import { buildPhotoSizes } from "../services/media.js";
 import { getDispatcher } from "../dispatcher.js";
 import { telegramPaths } from "../paths.js";
 import {
