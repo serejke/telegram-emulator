@@ -1,6 +1,6 @@
 {
   "name": "@serejke/telegram-emulator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stateful in-process emulator of the Telegram Bot API for end-to-end testing Telegram bots without the network.",
   "license": "Apache-2.0",
   "author": "Sergei Patrikeev <6849689+serejke@users.noreply.github.com>",
@@ -36,7 +36,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsup",
