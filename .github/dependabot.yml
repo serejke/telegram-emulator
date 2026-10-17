@@ -31,6 +31,10 @@ updates:
       # migration (tsup's dts build depends on the TS 5 API).
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+      # Vitest 5 changed Assertion to Assertion<R, T>; grammy-emulate's matcher
+      # augmentation can't match both 4 and 5, so moving is a breaking release.
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
