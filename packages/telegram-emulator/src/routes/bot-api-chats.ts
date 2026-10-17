@@ -1,6 +1,6 @@
 // Chat-inspection Bot API methods: getChat, getChatMember,
 // getChatAdministrators, getChatMemberCount, sendChatAction.
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
@@ -37,11 +37,7 @@ function chatMemberStatus(chat: TelegramChat, subjectId: number, isBot: boolean)
   return "member";
 }
 
-function buildChatMember(
-  status: MemberStatus,
-  user: WireUser | WireBotAsUser,
-  chat: TelegramChat,
-): WireChatMember {
+function buildChatMember(status: MemberStatus, user: WireUser | WireBotAsUser, chat: TelegramChat): WireChatMember {
   if (status === "left") return { status: "left", user };
   if (status === "member") return { status: "member", user };
 
@@ -57,9 +53,8 @@ function buildChatMember(
     can_change_info: true,
     can_invite_users: true,
   };
-  const channelRights = chat.type === "channel"
-    ? { can_post_messages: true, can_edit_messages: true }
-    : { can_pin_messages: true };
+  const channelRights =
+    chat.type === "channel" ? { can_post_messages: true, can_edit_messages: true } : { can_pin_messages: true };
   const forumRights = isForum ? { can_manage_topics: true } : {};
 
   if (status === "creator") {
@@ -104,8 +99,7 @@ export function getChatMember(c: Context, raw: unknown, store: Store) {
   const user = ts.users.findOneBy("user_id", userId);
   const bot = ts.bots.findOneBy("bot_id", userId);
   const isBotSubject = !!bot && !user;
-  const knownMember =
-    (user && chat.member_user_ids.includes(userId)) || (bot && chat.member_bot_ids.includes(userId));
+  const knownMember = (user && chat.member_user_ids.includes(userId)) || (bot && chat.member_bot_ids.includes(userId));
 
   if (!user && !bot) return tgError(c, "Bad Request: user not found");
   if (!knownMember) return tgError(c, "Bad Request: user not found in chat");

@@ -1,4 +1,4 @@
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { RouteContext, Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import {
@@ -32,12 +32,7 @@ import {
   zSimulateUserMessageInput,
   zSimulateUserPhotoInput,
 } from "../types/validators/control.js";
-import {
-  serializeBotAsUser,
-  serializeChat,
-  serializeMessage,
-  serializeUser,
-} from "../serializers.js";
+import { serializeBotAsUser, serializeChat, serializeMessage, serializeUser } from "../serializers.js";
 import { parseEntities } from "../entity-parser.js";
 import {
   allocateMessageId,
@@ -313,9 +308,7 @@ export function simulateChannelPost(
   let msg: TelegramMessage;
   if (input.edited) {
     if (input.existingMessageId === undefined) throw new Error("existingMessageId required for edited post");
-    const existing = ts.messages
-      .findBy("chat_id", input.chatId)
-      .find((m) => m.message_id === input.existingMessageId);
+    const existing = ts.messages.findBy("chat_id", input.chatId).find((m) => m.message_id === input.existingMessageId);
     if (!existing) throw new Error(`message ${input.existingMessageId} not found`);
     ts.messages.update(existing.id, {
       text: input.text,
@@ -353,12 +346,7 @@ export function simulateChannelPost(
   return { message_id: msg.message_id, update_id: firstUpdateId };
 }
 
-import {
-  clearFaults,
-  getCallbackAnswer,
-  injectFault,
-  type InjectFaultInput,
-} from "./control-diagnostics.js";
+import { clearFaults, getCallbackAnswer, injectFault, type InjectFaultInput } from "./control-diagnostics.js";
 export { clearFaults, getCallbackAnswer, injectFault };
 export type { InjectFaultInput };
 
@@ -468,7 +456,10 @@ export interface SimulateUserMessageInput {
   messageThreadId?: number;
 }
 
-export function simulateUserMessage(store: Store, input: SimulateUserMessageInput): {
+export function simulateUserMessage(
+  store: Store,
+  input: SimulateUserMessageInput,
+): {
   message_id: number;
   update_id: number;
 } {
@@ -717,10 +708,7 @@ export interface SimulateReactionInput {
   reaction: Array<{ type: "emoji"; emoji: string } | { type: "custom_emoji"; custom_emoji_id: string }>;
 }
 
-export function simulateReaction(
-  store: Store,
-  input: SimulateReactionInput,
-): { update_id: number } {
+export function simulateReaction(store: Store, input: SimulateReactionInput): { update_id: number } {
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", input.chatId);
   if (!chat) throw new Error(`chat ${input.chatId} not found`);
@@ -923,9 +911,8 @@ export function controlRoutes(ctx: RouteContext): void {
     const r = await parseJsonBody(c, zSimulateUserPhotoInput);
     if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const photoBytes = r.data.photoBase64 !== undefined
-      ? Buffer.from(r.data.photoBase64, "base64")
-      : r.data.photo!.bytes;
+    const photoBytes =
+      r.data.photoBase64 !== undefined ? Buffer.from(r.data.photoBase64, "base64") : r.data.photo!.bytes;
     const result = simulateUserPhoto(store, {
       chatId,
       userId: r.data.userId,
@@ -1033,9 +1020,7 @@ export function controlRoutes(ctx: RouteContext): void {
     if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
     const photoBytes =
-      r.data.photo_bytes_base64 !== undefined
-        ? Buffer.from(r.data.photo_bytes_base64, "base64")
-        : undefined;
+      r.data.photo_bytes_base64 !== undefined ? Buffer.from(r.data.photo_bytes_base64, "base64") : undefined;
     const result = simulateChannelPost(store, {
       chatId,
       text: r.data.text,
@@ -1066,9 +1051,7 @@ export function controlRoutes(ctx: RouteContext): void {
     const r = await parseJsonBody(c, zSimulateUserMediaInput);
     if (!r.ok) return r.response;
     const chatId = Number(c.req.param("chatId"));
-    const bytes = r.data.bytesBase64 !== undefined
-      ? Buffer.from(r.data.bytesBase64, "base64")
-      : r.data.file!.bytes;
+    const bytes = r.data.bytesBase64 !== undefined ? Buffer.from(r.data.bytesBase64, "base64") : r.data.file!.bytes;
     const result = simulateUserMedia(store, {
       chatId,
       userId: r.data.userId,
@@ -1124,8 +1107,6 @@ function toBotDto(bot: TelegramBot) {
 }
 
 // Re-export for tests
-export function registerInlineKeyboardMarkup(
-  markup: InlineKeyboardMarkup,
-): InlineKeyboardMarkup {
+export function registerInlineKeyboardMarkup(markup: InlineKeyboardMarkup): InlineKeyboardMarkup {
   return markup;
 }

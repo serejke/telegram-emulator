@@ -32,4 +32,3 @@ export interface WireChatFullInfo extends WireChat {
   // guards against cycles with a depth cap.
   pinned_message?: WireMessage;
 }
-

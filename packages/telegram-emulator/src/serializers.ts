@@ -1,18 +1,7 @@
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "./store.js";
-import type {
-  TelegramBot,
-  TelegramChat,
-  TelegramMessage,
-  TelegramUser,
-} from "./entities.js";
-import type {
-  WireBotAsUser,
-  WireChat,
-  WireChatFullInfo,
-  WireMessage,
-  WireUser,
-} from "./types/wire/index.js";
+import type { TelegramBot, TelegramChat, TelegramMessage, TelegramUser } from "./entities.js";
+import type { WireBotAsUser, WireChat, WireChatFullInfo, WireMessage, WireUser } from "./types/wire/index.js";
 import type { ChatPermissions } from "./types/store/chat.js";
 
 export function resolveBotFromToken(store: Store, token: string): TelegramBot | null {
@@ -72,10 +61,7 @@ const DEFAULT_GROUP_PERMISSIONS: ChatPermissions = {
   can_manage_topics: false,
 };
 
-export function serializeChatFullInfo(
-  ch: TelegramChat,
-  ctx: { store: Store },
-): WireChatFullInfo {
+export function serializeChatFullInfo(ch: TelegramChat, ctx: { store: Store }): WireChatFullInfo {
   const out: WireChatFullInfo = {
     ...serializeChat(ch),
     accent_color_id: ch.accent_color_id ?? 0,
@@ -102,10 +88,7 @@ export function serializeChatFullInfo(
   return out;
 }
 
-export function serializeMessage(
-  msg: TelegramMessage,
-  ctx: { store: Store; depth?: number },
-): WireMessage {
+export function serializeMessage(msg: TelegramMessage, ctx: { store: Store; depth?: number }): WireMessage {
   const ts = getTelegramStore(ctx.store);
   const chat = ts.chats.findOneBy("chat_id", msg.chat_id);
   const fromUser = msg.from_user_id !== null ? ts.users.findOneBy("user_id", msg.from_user_id) : undefined;

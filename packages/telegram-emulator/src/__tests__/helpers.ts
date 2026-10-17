@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono } from "@emulators/core";
 import { Store, WebhookDispatcher, type TokenMap, type AppEnv, authMiddleware } from "@emulators/core";
 import { telegramPlugin } from "../index.js";
 import { getDispatcher } from "../dispatcher.js";
@@ -16,7 +16,7 @@ export function createTestApp(options?: { seed?: boolean; baseUrl?: string }): T
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware(tokenMap));
 
-  const baseUrl = options?.baseUrl ?? "http://localhost:4007";
+  const baseUrl = options?.baseUrl ?? "http://localhost:4014";
   telegramPlugin.register(app, store, webhooks, baseUrl, tokenMap);
   if (options?.seed !== false) {
     telegramPlugin.seed!(store, baseUrl);
@@ -30,7 +30,7 @@ export function createTestApp(options?: { seed?: boolean; baseUrl?: string }): T
 }
 
 export async function postJson(app: Hono<AppEnv>, path: string, body: unknown): Promise<Response> {
-  return app.request(`http://localhost:4007${path}`, {
+  return app.request(`http://localhost:4014${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -38,7 +38,7 @@ export async function postJson(app: Hono<AppEnv>, path: string, body: unknown): 
 }
 
 export async function getJson(app: Hono<AppEnv>, path: string): Promise<Response> {
-  return app.request(`http://localhost:4007${path}`);
+  return app.request(`http://localhost:4014${path}`);
 }
 
 export async function json<T>(res: Response): Promise<T> {

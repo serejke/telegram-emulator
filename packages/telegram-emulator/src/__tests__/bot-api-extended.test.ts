@@ -145,7 +145,10 @@ describe("deleteMessage", () => {
     const user = createUser(tx.store, { first_name: "A" });
     const dm = createPrivateChat(tx.store, { botId: bot.bot_id, userId: user.user_id });
 
-    const sendRes = await postJson(tx.app, `/bot${bot.token}/sendMessage`, { chat_id: dm.chat_id, text: "to be deleted" });
+    const sendRes = await postJson(tx.app, `/bot${bot.token}/sendMessage`, {
+      chat_id: dm.chat_id,
+      text: "to be deleted",
+    });
     const sent = await json<{ result: { message_id: number } }>(sendRes);
 
     const delRes = await postJson(tx.app, `/bot${bot.token}/deleteMessage`, {
@@ -157,7 +160,7 @@ describe("deleteMessage", () => {
     expect(delBody.result).toBe(true);
 
     const all = await json<{ messages: unknown[] }>(
-      await tx.app.request(`http://localhost:4007/_emu/telegram/chats/${dm.chat_id}/messages?scope=all`),
+      await tx.app.request(`http://localhost:4014/_emu/telegram/chats/${dm.chat_id}/messages?scope=all`),
     );
     expect(all.messages).toHaveLength(0);
 
@@ -200,7 +203,10 @@ describe("sendDocument", () => {
       document: "seed_doc_1",
       caption: "your itinerary",
     });
-    const body = await json<{ ok: boolean; result: { document: { file_id: string; file_name?: string; mime_type?: string } } }>(res);
+    const body = await json<{
+      ok: boolean;
+      result: { document: { file_id: string; file_name?: string; mime_type?: string } };
+    }>(res);
     expect(body.ok).toBe(true);
     expect(body.result.document.file_name).toBe("trip.pdf");
     expect(body.result.document.mime_type).toBe("application/pdf");
@@ -209,7 +215,7 @@ describe("sendDocument", () => {
 
     // Download the file_id via HTTP — reuses the original file path.
     const dl = await tx.app.request(
-      `http://localhost:4007/file/bot${bot.token}/documents/${bot.bot_id}/${body.result.document.file_id}`,
+      `http://localhost:4014/file/bot${bot.token}/documents/${bot.bot_id}/${body.result.document.file_id}`,
     );
     expect(dl.status).toBe(200);
     expect(Buffer.from(await dl.arrayBuffer()).toString()).toBe("pdfdata");

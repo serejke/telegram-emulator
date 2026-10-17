@@ -119,26 +119,24 @@ describe("simple schemas", () => {
     const r = zSetMessageReactionBody.parse({
       chat_id: 1,
       message_id: 2,
-      reaction: [{ type: "emoji", emoji: "👍" }, { type: "custom_emoji", custom_emoji_id: "x" }],
+      reaction: [
+        { type: "emoji", emoji: "👍" },
+        { type: "custom_emoji", custom_emoji_id: "x" },
+      ],
     });
     expect(r.reaction?.length).toBe(2);
   });
   it("zSetMyCommandsBody", () => {
     expect(
-      zSetMyCommandsBody.parse({ commands: [{ command: "start", description: "Start" }] })
-        .commands[0].command,
+      zSetMyCommandsBody.parse({ commands: [{ command: "start", description: "Start" }] }).commands[0].command,
     ).toBe("start");
   });
   it("zSendMessageDraftBody", () => {
-    expect(
-      zSendMessageDraftBody.parse({ chat_id: 1, draft_id: 10, text: "draft" }).draft_id,
-    ).toBe(10);
+    expect(zSendMessageDraftBody.parse({ chat_id: 1, draft_id: 10, text: "draft" }).draft_id).toBe(10);
   });
   it("zCreateBotInput / zInjectFaultInput", () => {
     expect(zCreateBotInput.parse({ username: "foo_bot" }).username).toBe("foo_bot");
-    expect(
-      zInjectFaultInput.parse({ bot_id: 1, method: "*", error_code: 429 }).error_code,
-    ).toBe(429);
+    expect(zInjectFaultInput.parse({ bot_id: 1, method: "*", error_code: 429 }).error_code).toBe(429);
   });
 });
 

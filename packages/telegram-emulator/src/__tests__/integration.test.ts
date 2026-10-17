@@ -579,7 +579,7 @@ describe("Integration — callback answer reader", () => {
     expect(answer?.answer_text).toBe("Yes!");
     expect(answer?.answer_show_alert).toBe(true);
 
-    const httpAnswer = await tx.app.request(`http://localhost:4007/_emu/telegram/callbacks/${id}`);
+    const httpAnswer = await tx.app.request(`http://localhost:4014/_emu/telegram/callbacks/${id}`);
     expect(httpAnswer.status).toBe(200);
     const httpBody = (await httpAnswer.json()) as {
       ok: true;

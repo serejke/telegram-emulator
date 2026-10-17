@@ -65,9 +65,7 @@ export function parseHtml(input: string): ParsedHtml {
         const name = tagBody.slice(1).trim().toLowerCase();
         const open = stack.pop();
         if (!open || open.name !== name) {
-          throw new HtmlParseError(
-            `Bad Request: can't parse entities: mismatched closing tag </${name}>`,
-          );
+          throw new HtmlParseError(`Bad Request: can't parse entities: mismatched closing tag </${name}>`);
         }
         const endOffset = utf16Length(out.join(""));
         let entType = open.entityType;
@@ -111,9 +109,7 @@ export function parseHtml(input: string): ParsedHtml {
       }
       const entType = TAG_TO_ENTITY[entityName];
       if (!entType) {
-        throw new HtmlParseError(
-          `Bad Request: can't parse entities: unsupported tag <${normalized}>`,
-        );
+        throw new HtmlParseError(`Bad Request: can't parse entities: unsupported tag <${normalized}>`);
       }
       if (selfClose) {
         // Self-closing with no content doesn't produce an entity.
@@ -141,9 +137,7 @@ export function parseHtml(input: string): ParsedHtml {
       const ref = input.slice(i + 1, semi);
       const decoded = decodeHtmlEntity(ref);
       if (decoded === null) {
-        throw new HtmlParseError(
-          `Bad Request: can't parse entities: unknown HTML entity '&${ref};'`,
-        );
+        throw new HtmlParseError(`Bad Request: can't parse entities: unknown HTML entity '&${ref};'`);
       }
       out.push(decoded);
       i = semi + 1;
@@ -155,9 +149,7 @@ export function parseHtml(input: string): ParsedHtml {
   }
 
   if (stack.length > 0) {
-    throw new HtmlParseError(
-      `Bad Request: can't parse entities: unclosed tag <${stack[stack.length - 1].name}>`,
-    );
+    throw new HtmlParseError(`Bad Request: can't parse entities: unclosed tag <${stack[stack.length - 1].name}>`);
   }
 
   entities.sort((a, b) => (a.offset !== b.offset ? a.offset - b.offset : b.length - a.length));

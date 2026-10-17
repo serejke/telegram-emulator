@@ -55,18 +55,6 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
   const stack: OpenEntity[] = [];
   let i = 0;
 
-  const pushEntity = (e: Omit<MessageEntity, "offset"> & { startOffset: number }) => {
-    const endOffset = utf16Length(out.join(""));
-    entities.push({
-      type: e.type,
-      offset: e.startOffset,
-      length: endOffset - e.startOffset,
-      ...(e.url ? { url: e.url } : {}),
-      ...(e.user ? { user: e.user } : {}),
-      ...(e.language ? { language: e.language } : {}),
-    });
-  };
-
   while (i < input.length) {
     const ch = input[i];
 
@@ -100,9 +88,7 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
     if (ch === "\\") {
       // Escape: emit the next char literally, consume both.
       if (i + 1 >= input.length) {
-        throw new MarkdownParseError(
-          "Bad Request: can't parse entities: stray '\\' at end of input",
-        );
+        throw new MarkdownParseError("Bad Request: can't parse entities: stray '\\' at end of input");
       }
       out.push(input[i + 1]);
       i += 2;
@@ -114,9 +100,7 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
       // Find a closing ``` that is not escaped.
       const closeStart = findUnescaped(input, "```", i + 3);
       if (closeStart === -1) {
-        throw new MarkdownParseError(
-          "Bad Request: can't parse entities: unclosed code block",
-        );
+        throw new MarkdownParseError("Bad Request: can't parse entities: unclosed code block");
       }
       let body = input.slice(i + 3, closeStart);
       // Optional language line: first line before newline.
@@ -148,9 +132,7 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
     if (ch === "`") {
       const closeIdx = findUnescaped(input, "`", i + 1);
       if (closeIdx === -1) {
-        throw new MarkdownParseError(
-          "Bad Request: can't parse entities: unclosed inline code",
-        );
+        throw new MarkdownParseError("Bad Request: can't parse entities: unclosed inline code");
       }
       const raw = input.slice(i + 1, closeIdx);
       const body = raw.replace(/\\([`\\])/g, "$1");
@@ -165,9 +147,7 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
     if (ch === "[") {
       const parsed = parseLink(input, i);
       if (!parsed) {
-        throw new MarkdownParseError(
-          "Bad Request: can't parse entities: malformed or unclosed inline link",
-        );
+        throw new MarkdownParseError("Bad Request: can't parse entities: malformed or unclosed inline link");
       }
       const { text: linkText, url, nextIdx } = parsed;
       const inner = parseMarkdownV2(linkText); // recursive for styled link text
@@ -241,9 +221,7 @@ export function parseMarkdownV2(input: string): ParsedMarkup {
 
   if (stack.length > 0) {
     const open = stack[stack.length - 1];
-    throw new MarkdownParseError(
-      `Bad Request: can't parse entities: unclosed entity of type ${open.type}`,
-    );
+    throw new MarkdownParseError(`Bad Request: can't parse entities: unclosed entity of type ${open.type}`);
   }
 
   // Sort entities by (offset, length desc) so the order is deterministic —
@@ -281,10 +259,7 @@ function toggleEntity(
   });
 }
 
-function parseLink(
-  input: string,
-  start: number,
-): { text: string; url: string; nextIdx: number } | null {
+function parseLink(input: string, start: number): { text: string; url: string; nextIdx: number } | null {
   // Find matching `]` without traversing into nested `[` or escapes.
   let i = start + 1;
   let text = "";
@@ -322,11 +297,7 @@ function parseLink(
   return { text, url, nextIdx: j + 1 };
 }
 
-function parseBlockquote(
-  input: string,
-  start: number,
-  expandable: boolean,
-): { body: string; nextIdx: number } | null {
+function parseBlockquote(input: string, start: number, expandable: boolean): { body: string; nextIdx: number } | null {
   // Strip the leading `**` for expandable; each line must start with `>`.
   let i = expandable ? start + 2 : start;
   if (input[i] !== ">") return null;
@@ -345,7 +316,7 @@ function parseBlockquote(
     }
   }
   if (lines.length === 0) return null;
-  let nextIdx = i;
+  const nextIdx = i;
   if (expandable) {
     // The closing `||` must sit at the end of the last line content.
     const last = lines[lines.length - 1];

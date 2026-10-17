@@ -1,4 +1,4 @@
-import type { Hono } from "hono";
+import type { Hono } from "@emulators/core";
 import type { ServicePlugin, Store, WebhookDispatcher, TokenMap, AppEnv, RouteContext } from "@emulators/core";
 import { getTelegramStore } from "./store.js";
 import { botApiRoutes } from "./routes/bot-api.js";
@@ -133,13 +133,7 @@ export function seedFromConfig(store: Store, _baseUrl: string, config: TelegramS
 
 export const telegramPlugin: ServicePlugin = {
   name: "telegram",
-  register(
-    app: Hono<AppEnv>,
-    store: Store,
-    webhooks: WebhookDispatcher,
-    baseUrl: string,
-    tokenMap?: TokenMap,
-  ): void {
+  register(app: Hono<AppEnv>, store: Store, webhooks: WebhookDispatcher, baseUrl: string, tokenMap?: TokenMap): void {
     const ctx: RouteContext = { app, store, webhooks, baseUrl, tokenMap };
     // Specific routes first so they win over the catchall in bot-api.
     controlRoutes(ctx);

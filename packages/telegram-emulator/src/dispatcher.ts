@@ -49,11 +49,7 @@ export class TelegramDispatcher {
     this.backoffEnabled = enabled;
   }
 
-  enqueue<T extends UpdateType>(
-    botId: number,
-    type: T,
-    payload: PayloadFor<T>,
-  ): TelegramUpdate {
+  enqueue<T extends UpdateType>(botId: number, type: T, payload: PayloadFor<T>): TelegramUpdate {
     const ts = getTelegramStore(this.store);
     const bot = ts.bots.findOneBy("bot_id", botId);
     if (!bot) {
@@ -100,9 +96,7 @@ export class TelegramDispatcher {
 
   private pruneQueue(botId: number): void {
     const ts = getTelegramStore(this.store);
-    const forBot = ts.updates
-      .findBy("for_bot_id", botId)
-      .sort((a, b) => a.update_id - b.update_id);
+    const forBot = ts.updates.findBy("for_bot_id", botId).sort((a, b) => a.update_id - b.update_id);
     const delivered = forBot.filter((u) => u.delivered);
     while (delivered.length > MAX_DELIVERED_HISTORY) {
       const drop = delivered.shift()!;
@@ -171,18 +165,14 @@ export class TelegramDispatcher {
       attempt += 1;
       if (attempt > this.retryPolicy.maxRetries) break;
       if (this.backoffEnabled) {
-        const delay = this.retryPolicy.backoffMs[attempt - 1] ?? this.retryPolicy.backoffMs[this.retryPolicy.backoffMs.length - 1];
+        const delay =
+          this.retryPolicy.backoffMs[attempt - 1] ?? this.retryPolicy.backoffMs[this.retryPolicy.backoffMs.length - 1];
         await sleep(delay);
       }
     }
   }
 
-  getUpdates(
-    botId: number,
-    offset?: number,
-    limit = 100,
-    timeoutSec = 0,
-  ): Promise<GetUpdatesResult> {
+  getUpdates(botId: number, offset?: number, limit = 100, timeoutSec = 0): Promise<GetUpdatesResult> {
     const ready = this.drain(botId, offset, limit);
     // Short-poll: drain and return immediately. Does not cancel any
     // in-flight long-poll — grammY/telegraf's own `bot.stop()` issues
@@ -224,9 +214,7 @@ export class TelegramDispatcher {
 
   private drain(botId: number, offset: number | undefined, limit: number): TelegramUpdate[] {
     const ts = getTelegramStore(this.store);
-    const all = ts.updates
-      .findBy("for_bot_id", botId)
-      .sort((a, b) => a.update_id - b.update_id);
+    const all = ts.updates.findBy("for_bot_id", botId).sort((a, b) => a.update_id - b.update_id);
 
     // offset semantics: if set, confirm-and-drop updates with update_id < offset.
     if (offset !== undefined && offset > 0) {

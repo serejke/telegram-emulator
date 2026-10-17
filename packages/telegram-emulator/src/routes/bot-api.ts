@@ -1,12 +1,9 @@
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { RouteContext, Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { nextFileId } from "../ids.js";
 import { ok, okRaw, parseTelegramBody, tgError } from "../http.js";
-import {
-  resolveBotFromToken,
-  serializeMessage,
-} from "../serializers.js";
+import { resolveBotFromToken, serializeMessage } from "../serializers.js";
 import { parseEntities } from "../entity-parser.js";
 import { getDispatcher } from "../dispatcher.js";
 import { MarkdownParseError, parseMarkdownV2 } from "../markdown.js";
@@ -18,20 +15,8 @@ import {
   deleteForumTopicMethod,
   editForumTopicMethod,
 } from "./bot-api-forum.js";
-import {
-  getChat,
-  getChatAdministrators,
-  getChatMember,
-  getChatMemberCount,
-  sendChatAction,
-} from "./bot-api-chats.js";
-import {
-  deleteWebhook,
-  getMe,
-  getUpdates,
-  getWebhookInfo,
-  setWebhook,
-} from "./bot-api-delivery.js";
+import { getChat, getChatAdministrators, getChatMember, getChatMemberCount, sendChatAction } from "./bot-api-chats.js";
+import { deleteWebhook, getMe, getUpdates, getWebhookInfo, setWebhook } from "./bot-api-delivery.js";
 import type { z } from "zod";
 import { parseWithSchema, type ParseResult } from "../types/validators/body.js";
 import {
@@ -97,15 +82,17 @@ export function botApiRoutes(ctx: RouteContext): void {
       const status = faultHttpStatus(fault.error_code);
       const parameters = fault.retry_after !== null ? { retry_after: fault.retry_after } : undefined;
       return c.json(
-        { ok: false, error_code: fault.error_code, description: fault.description, ...(parameters ? { parameters } : {}) },
+        {
+          ok: false,
+          error_code: fault.error_code,
+          description: fault.description,
+          ...(parameters ? { parameters } : {}),
+        },
         status,
       );
     }
 
-    const body: unknown =
-      c.req.method === "GET"
-        ? queryToBody(c)
-        : await parseTelegramBody(c);
+    const body: unknown = c.req.method === "GET" ? queryToBody(c) : await parseTelegramBody(c);
 
     switch (method) {
       case "getMe":
@@ -177,11 +164,12 @@ export function botApiRoutes(ctx: RouteContext): void {
     }
   };
 
-  // Hono's parametric and wildcard routes do not cooperate with path segments
+  // Parametric and wildcard routes do not cooperate with path segments
   // containing ":" (used by Telegram bot tokens). We register a catchall that
-  // dispatches based on path shape — specific routes registered by other
-  // modules still win because Hono prioritises specific matches over "*".
-  app.all("*", async (c) => {
+  // dispatches based on path shape. Registered last, and the router resolves
+  // routes in registration order, so the specific routes declared by the
+  // control and inspector modules still win.
+  const catchall = async (c: Context) => {
     const path = new URL(c.req.url).pathname;
 
     const botMatch = path.match(/^\/bot([^/]+)\/([A-Za-z]+)$/);
@@ -205,7 +193,11 @@ export function botApiRoutes(ctx: RouteContext): void {
     }
 
     return c.notFound();
-  });
+  };
+
+  for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
+    app.on(method, "*", catchall);
+  }
 }
 
 // GET-style requests embed body fields in the query string; preserve the
@@ -223,12 +215,7 @@ function queryToBody(c: Context): unknown {
   return result;
 }
 
-function sendMessage(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function sendMessage(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSendMessageBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -285,10 +272,7 @@ function sendMessage(
 const TEXT_LIMIT = 4096;
 const CAPTION_LIMIT = 1024;
 
-function validateMessageThreadId(
-  raw: number | undefined,
-  chat: TelegramChat,
-): string | null {
+function validateMessageThreadId(raw: number | undefined, chat: TelegramChat): string | null {
   if (raw === undefined) return null;
   if (chat.type !== "supergroup") return "Bad Request: message thread not found";
   return null;
@@ -334,10 +318,7 @@ function applyParseMode(
   }
 }
 
-function mergeEntities(
-  parsed: MessageEntity[],
-  caller: MessageEntity[] | undefined,
-): MessageEntity[] {
+function mergeEntities(parsed: MessageEntity[], caller: MessageEntity[] | undefined): MessageEntity[] {
   if (!caller || caller.length === 0) return parsed;
   // When caller supplies entities explicitly, real Telegram discards
   // parse_mode output — drop the parsed side.
@@ -408,12 +389,7 @@ function parseLegacyMarkdown(input: string): { text: string; entities: MessageEn
   return { text: out.join(""), entities };
 }
 
-async function sendPhoto(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+async function sendPhoto(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSendPhotoBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -513,12 +489,7 @@ function applyCaption(
   return { ok: true, caption: parsed.text, captionEntities: parsed.entities };
 }
 
-function setMessageReaction(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function setMessageReaction(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSetMessageReactionBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -526,15 +497,13 @@ function setMessageReaction(
   const ts = getTelegramStore(store);
   const chat = ts.chats.findOneBy("chat_id", body.chat_id);
   if (!chat) return tgError(c, "Bad Request: chat not found");
-  const msg = ts.messages
-    .findBy("chat_id", body.chat_id)
-    .find((m) => m.message_id === body.message_id);
+  const msg = ts.messages.findBy("chat_id", body.chat_id).find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
 
   // Upsert the reaction row for this bot on this message.
-  const existing = ts.reactions.all().find(
-    (rr) => rr.chat_id === body.chat_id && rr.message_id === body.message_id && rr.sender_bot_id === bot.bot_id,
-  );
+  const existing = ts.reactions
+    .all()
+    .find((rr) => rr.chat_id === body.chat_id && rr.message_id === body.message_id && rr.sender_bot_id === bot.bot_id);
   const typed = (body.reaction ?? []).map((rr) =>
     rr.type === "emoji"
       ? { type: "emoji" as const, emoji: rr.emoji ?? "" }
@@ -560,12 +529,7 @@ function setMessageReaction(
   return c.json({ ok: true, result: true });
 }
 
-function getFile(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function getFile(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zGetFileBody, raw);
   if (!r.ok) return r.response;
 
@@ -582,12 +546,7 @@ function getFile(
   });
 }
 
-function answerCallbackQuery(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function answerCallbackQuery(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zAnswerCallbackQueryBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -607,12 +566,7 @@ function answerCallbackQuery(
   return c.json({ ok: true, result: true });
 }
 
-function setMyCommands(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function setMyCommands(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSetMyCommandsBody, raw);
   if (!r.ok) return r.response;
 
@@ -625,20 +579,13 @@ function getMyCommands(c: Context, bot: TelegramBot) {
   return c.json({ ok: true, result: bot.commands });
 }
 
-function editMessageReplyMarkup(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function editMessageReplyMarkup(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zEditMessageReplyMarkupBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
 
   const ts = getTelegramStore(store);
-  const msg = ts.messages
-    .findBy("chat_id", body.chat_id)
-    .find((m) => m.message_id === body.message_id);
+  const msg = ts.messages.findBy("chat_id", body.chat_id).find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
 
   // editMessageReplyMarkup only accepts inline keyboards — the other
@@ -701,15 +648,11 @@ export function simulateInsertMessage(
 
 // ---- Full-parity additions: faults, rich media, length limits ----
 
-function consumeFault(
-  store: Store,
-  botId: number,
-  method: string,
-): TelegramFault | null {
+function consumeFault(store: Store, botId: number, method: string): TelegramFault | null {
   const ts = getTelegramStore(store);
-  const matches = ts.faults.all().filter(
-    (f) => f.bot_id === botId && (f.method === "*" || f.method === method) && f.remaining > 0,
-  );
+  const matches = ts.faults
+    .all()
+    .filter((f) => f.bot_id === botId && (f.method === "*" || f.method === method) && f.remaining > 0);
   if (matches.length === 0) return null;
   // Prefer specific-method faults over wildcards.
   matches.sort((a, b) => (a.method === "*" ? 1 : 0) - (b.method === "*" ? 1 : 0));
@@ -733,12 +676,7 @@ function faultHttpStatus(errorCode: number): 400 | 401 | 403 | 404 | 429 {
 // Narrow the per-kind zod body to (a) its media input field and
 // (b) the extra per-kind fields the handler consumes. Keeps the
 // dispatcher typed without a cast at the output site.
-type AnyMediaBody =
-  | SendVideoBody
-  | SendAudioBody
-  | SendVoiceBody
-  | SendAnimationBody
-  | SendStickerBody;
+type AnyMediaBody = SendVideoBody | SendAudioBody | SendVoiceBody | SendAnimationBody | SendStickerBody;
 
 // Lift the media-input field out of the per-kind body. Each branch has
 // exactly one such field whose key matches the method's kind. Using
@@ -765,13 +703,7 @@ function unreachable(kind: MediaKind): never {
   throw new Error(`sendMediaMessage: ${kind} body missing its media field`);
 }
 
-async function sendMediaMessage(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-  kind: MediaKind,
-) {
+async function sendMediaMessage(c: Context, bot: TelegramBot, raw: unknown, store: Store, kind: MediaKind) {
   const schema = BODY_FOR_MEDIA[kind] as z.ZodType<AnyMediaBody>;
   const r: ParseResult<AnyMediaBody> = parseWithSchema(c, schema, raw);
   if (!r.ok) return r.response;
@@ -901,12 +833,7 @@ function defaultMimeForKind(kind: MediaKind): string {
 
 // ---- editMessageText / deleteMessage / sendMessageDraft / sendDocument ----
 
-function editMessageText(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function editMessageText(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zEditMessageTextBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -914,9 +841,7 @@ function editMessageText(
   if (!body.text) return tgError(c, "Bad Request: text is required");
 
   const ts = getTelegramStore(store);
-  const msg = ts.messages
-    .findBy("chat_id", body.chat_id)
-    .find((m) => m.message_id === body.message_id);
+  const msg = ts.messages.findBy("chat_id", body.chat_id).find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
   if (msg.from_bot_id !== bot.bot_id) {
     return tgError(c, "Bad Request: message can't be edited by this bot", 403, 403);
@@ -937,12 +862,7 @@ function editMessageText(
   return ok(c, serializeMessage(updated, { store }));
 }
 
-function dispatchEditedMessage(
-  store: Store,
-  chat: TelegramChat,
-  editorBotId: number,
-  updated: TelegramMessage,
-): void {
+function dispatchEditedMessage(store: Store, chat: TelegramChat, editorBotId: number, updated: TelegramMessage): void {
   const ts = getTelegramStore(store);
   const dispatcher = getDispatcher(store);
   const payload = serializeMessage(updated, { store });
@@ -955,20 +875,13 @@ function dispatchEditedMessage(
   }
 }
 
-function deleteMessage(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function deleteMessage(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zDeleteMessageBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
 
   const ts = getTelegramStore(store);
-  const msg = ts.messages
-    .findBy("chat_id", body.chat_id)
-    .find((m) => m.message_id === body.message_id);
+  const msg = ts.messages.findBy("chat_id", body.chat_id).find((m) => m.message_id === body.message_id);
   if (!msg) return tgError(c, "Bad Request: message not found");
   // Telegram allows bots to delete their own messages unconditionally,
   // and messages from other senders only if the bot has sufficient rights
@@ -980,12 +893,7 @@ function deleteMessage(
   return c.json({ ok: true, result: true });
 }
 
-function sendMessageDraft(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+function sendMessageDraft(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSendMessageDraftBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -1021,12 +929,7 @@ function sendMessageDraft(
   return c.json({ ok: true, result: true });
 }
 
-async function sendDocument(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+async function sendDocument(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSendDocumentBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;

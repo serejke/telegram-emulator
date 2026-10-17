@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { Hono } from "hono";
+import { Hono } from "@emulators/core";
 import { Store, WebhookDispatcher, authMiddleware, type AppEnv } from "@emulators/core";
 import { telegramPlugin } from "../index.js";
 import { createTelegramTestClient } from "../test.js";
@@ -62,6 +62,48 @@ describe("Telegram test client + in-process HTTP round-trip", () => {
     expect(res.headers.get("content-type")).toContain("text/html");
     const html = await res.text();
     expect(html).toContain("Telegram");
+  });
+
+  it("injectFault / clearFaults / getCallbackAnswer route through fetchImpl (not global fetch)", async () => {
+    const tg = makeClient();
+    const bot = await tg.createBot({ username: "b" });
+    const user = await tg.createUser({ first_name: "A" });
+    const dm = await tg.createPrivateChat({ botId: bot.bot_id, userId: user.id });
+
+    // injectFault uses postJson → fetchImpl. Inject + clear and confirm
+    // no real-network I/O happens (baseUrl is the dummy localhost:0).
+    await tg.injectFault({ botId: bot.bot_id, method: "sendMessage", errorCode: 429, retryAfter: 3 });
+    await tg.clearFaults();
+
+    // Queue a callback via control plane so there's something to look up.
+    const sent = await app.request(`${baseUrl}/bot${bot.token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: dm.id,
+        text: "with button",
+        reply_markup: {
+          inline_keyboard: [[{ text: "ok", callback_data: "ok" }]],
+        },
+      }),
+    });
+    const sentBody = (await sent.json()) as { result: WireMessage };
+    const click = await tg.clickInlineButton({
+      chatId: dm.id,
+      userId: user.id,
+      messageId: sentBody.result.message_id,
+      callbackData: "ok",
+    });
+    // answerCallbackQuery so getCallbackAnswer has something to return.
+    await app.request(`${baseUrl}/bot${bot.token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: click.callback_query_id, text: "thanks" }),
+    });
+
+    const answer = await tg.getCallbackAnswer({ callbackQueryId: click.callback_query_id });
+    expect(answer?.answered).toBe(true);
+    expect(answer?.answer_text).toBe("thanks");
   });
 
   it("simulated photo upload and sendPhoto echo via test client", async () => {

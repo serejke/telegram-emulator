@@ -140,13 +140,7 @@ export function buildPhotoSizes(
 
 export function readImageDimensions(bytes: Buffer): { width: number; height: number } {
   // PNG: width at offset 16 (BE uint32), height at 20
-  if (
-    bytes.length >= 24 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  ) {
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   }
   // JPEG: walk markers
@@ -173,12 +167,7 @@ export function readImageDimensions(bytes: Buffer): { width: number; height: num
     }
   }
   // GIF
-  if (
-    bytes.length >= 10 &&
-    bytes[0] === 0x47 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46
-  ) {
+  if (bytes.length >= 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
     return { width: bytes.readUInt16LE(6), height: bytes.readUInt16LE(8) };
   }
   // WebP (VP8/VP8L/VP8X)

@@ -1,5 +1,4 @@
-import type { Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { Context, ContentfulStatusCode } from "@emulators/core";
 
 // `ok(c, result)` envelopes the method's response body. The payload
 // may be any Bot API wire object (WireMessage, WireUser, WireChat,
@@ -14,12 +13,7 @@ export function okRaw(c: Context, result: unknown) {
   return c.json({ ok: true, result });
 }
 
-export function tgError(
-  c: Context,
-  description: string,
-  error_code: number = 400,
-  status: ContentfulStatusCode = 400,
-) {
+export function tgError(c: Context, description: string, error_code: number = 400, status: ContentfulStatusCode = 400) {
   return c.json({ ok: false, error_code, description }, status);
 }
 
@@ -51,7 +45,7 @@ export async function parseTelegramBody(c: Context): Promise<unknown> {
   }
 
   if (contentType.includes("multipart/form-data")) {
-    const formData = await c.req.formData();
+    const formData = await c.req.raw.formData();
     const result: { [key: string]: unknown } = {};
     for (const [key, value] of formData.entries()) {
       if (typeof value !== "string" && typeof (value as File).arrayBuffer === "function") {
@@ -72,7 +66,14 @@ function tryParseJsonScalar(value: string): unknown {
   const trimmed = value.trim();
   if (!trimmed) return value;
   const first = trimmed[0];
-  if (first === "{" || first === "[" || first === '"' || trimmed === "true" || trimmed === "false" || /^-?\d/.test(trimmed)) {
+  if (
+    first === "{" ||
+    first === "[" ||
+    first === '"' ||
+    trimmed === "true" ||
+    trimmed === "false" ||
+    /^-?\d/.test(trimmed)
+  ) {
     try {
       return JSON.parse(trimmed);
     } catch {

@@ -1,24 +1,15 @@
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import { z } from "zod";
 import { parseTelegramBody, tgError } from "../../http.js";
 
-export type ParseResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; response: Response };
+export type ParseResult<T> = { ok: true; data: T } | { ok: false; response: Response };
 
-export async function parseJsonBody<T>(
-  c: Context,
-  schema: z.ZodType<T>,
-): Promise<ParseResult<T>> {
+export async function parseJsonBody<T>(c: Context, schema: z.ZodType<T>): Promise<ParseResult<T>> {
   const raw = await parseTelegramBody(c);
   return parseWithSchema(c, schema, raw);
 }
 
-export function parseWithSchema<T>(
-  c: Context,
-  schema: z.ZodType<T>,
-  raw: unknown,
-): ParseResult<T> {
+export function parseWithSchema<T>(c: Context, schema: z.ZodType<T>, raw: unknown): ParseResult<T> {
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, response: tgError(c, firstZodError(parsed.error)) };

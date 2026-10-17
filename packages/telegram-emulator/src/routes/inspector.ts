@@ -1,14 +1,8 @@
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { RouteContext, Store } from "@emulators/core";
 import { escapeHtml, renderSettingsPage } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
-import type {
-  MessageEntity,
-  TelegramBot,
-  TelegramChat,
-  TelegramMessage,
-  TelegramUpdate,
-} from "../entities.js";
+import type { MessageEntity, TelegramBot, TelegramChat, TelegramMessage, TelegramUpdate } from "../entities.js";
 import { isInlineKeyboardMarkup } from "../types/wire/reply-markup.js";
 
 const SERVICE_LABEL = "Telegram";
@@ -37,10 +31,9 @@ function renderEntities(text: string, entities?: MessageEntity[]): string {
   return html;
 }
 
-function renderPhoto(msg: TelegramMessage, botToken: string): string {
+function renderPhoto(msg: TelegramMessage): string {
   if (!msg.photo || msg.photo.length === 0) return "";
   const last = msg.photo[msg.photo.length - 1];
-  const href = `/file/bot${botToken}/photos/${encodeURIComponent(String(msg.chat_id))}/${encodeURIComponent(last.file_id)}`;
   return `<div style="margin-top:4px"><span class="badge badge-granted">photo ${last.width}x${last.height}</span> <span class="user-meta">${escapeHtml(last.file_id)}</span></div>`;
 }
 
@@ -67,9 +60,9 @@ function renderDocument(msg: TelegramMessage): string {
 function renderMessage(msg: TelegramMessage, lookups: Lookups): string {
   const from =
     msg.from_bot_id !== null
-      ? lookups.bots.get(msg.from_bot_id) ?? `bot:${msg.from_bot_id}`
+      ? (lookups.bots.get(msg.from_bot_id) ?? `bot:${msg.from_bot_id}`)
       : msg.from_user_id !== null
-        ? lookups.users.get(msg.from_user_id) ?? `user:${msg.from_user_id}`
+        ? (lookups.users.get(msg.from_user_id) ?? `user:${msg.from_user_id}`)
         : "?";
 
   const isBot = msg.from_bot_id !== null;
@@ -78,16 +71,13 @@ function renderMessage(msg: TelegramMessage, lookups: Lookups): string {
   const deletedBadge = msg.deleted ? ` <span class="badge badge-denied">deleted</span>` : "";
   const letter = (from[0] ?? "?").toUpperCase();
 
-  const bot = isBot ? lookups.botsByIdForToken.get(msg.from_bot_id ?? 0) : undefined;
-  const token = bot?.token ?? lookups.anyToken;
-
   return `<div class="org-row">
   <span class="org-icon">${escapeHtml(letter)}</span>
   <span class="org-name">${escapeHtml(from)}${botBadge}</span>
   <span class="user-meta" style="margin-left:auto">${timeAgo(msg.created_at)}${editedBadge}${deletedBadge}</span>
 </div>
 <div class="info-text" style="${msg.deleted ? "text-decoration:line-through;opacity:0.5" : ""}">${renderEntities(msg.text ?? "", msg.entities)}${msg.caption ? ` <em>${escapeHtml(msg.caption)}</em>` : ""}</div>
-${renderPhoto(msg, token)}
+${renderPhoto(msg)}
 ${renderDocument(msg)}
 ${renderReplyMarkup(msg)}`;
 }
@@ -95,8 +85,6 @@ ${renderReplyMarkup(msg)}`;
 interface Lookups {
   users: Map<number, string>;
   bots: Map<number, string>;
-  botsByIdForToken: Map<number, TelegramBot>;
-  anyToken: string;
 }
 
 function buildLookups(store: Store): Lookups {
@@ -106,22 +94,17 @@ function buildLookups(store: Store): Lookups {
     users.set(u.user_id, u.username ? `@${u.username}` : u.first_name);
   }
   const bots = new Map<number, string>();
-  const botsByIdForToken = new Map<number, TelegramBot>();
   for (const b of ts.bots.all()) {
     bots.set(b.bot_id, `@${b.username}`);
-    botsByIdForToken.set(b.bot_id, b);
   }
-  const anyToken = ts.bots.all()[0]?.token ?? "";
-  return { users, bots, botsByIdForToken, anyToken };
+  return { users, bots };
 }
 
 function renderChatLink(ch: TelegramChat, activeId: number, view: string): string {
   const active = ch.chat_id === activeId && view === "chats" ? ' class="active"' : "";
   const icon = ch.type === "private" ? "💬" : ch.type === "group" ? "#" : "ch";
   const label =
-    ch.type === "private"
-      ? ch.first_name || ch.username || `user:${ch.chat_id}`
-      : ch.title ?? `chat:${ch.chat_id}`;
+    ch.type === "private" ? ch.first_name || ch.username || `user:${ch.chat_id}` : (ch.title ?? `chat:${ch.chat_id}`);
   return `<a href="/?view=chats&chat=${ch.chat_id}"${active}>${escapeHtml(icon)} ${escapeHtml(label)}</a>`;
 }
 

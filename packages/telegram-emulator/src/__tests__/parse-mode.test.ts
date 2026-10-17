@@ -50,9 +50,7 @@ describe("MarkdownV2 parser", () => {
   it("handles inline text_link", () => {
     const r = parseMarkdownV2("[hello](https://example.com)");
     expect(r.text).toBe("hello");
-    expect(r.entities).toEqual([
-      { type: "text_link", offset: 0, length: 5, url: "https://example.com" },
-    ]);
+    expect(r.entities).toEqual([{ type: "text_link", offset: 0, length: 5, url: "https://example.com" }]);
   });
 
   it("handles text_mention via tg://user?id=N", () => {
@@ -111,9 +109,7 @@ describe("HTML parser", () => {
   it("extracts link with href", () => {
     const r = parseHtml('<a href="https://x.io">hello</a>');
     expect(r.text).toBe("hello");
-    expect(r.entities).toEqual([
-      { type: "text_link", offset: 0, length: 5, url: "https://x.io" },
-    ]);
+    expect(r.entities).toEqual([{ type: "text_link", offset: 0, length: 5, url: "https://x.io" }]);
   });
 
   it("extracts text_mention from tg://user", () => {

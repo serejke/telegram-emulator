@@ -34,9 +34,4 @@ export const zReplyKeyboardRemove = z.object({
 // Telegram's reply_markup has no shared discriminator tag — branches
 // are distinguished by required-key presence. Ordering matters: match
 // the most specific shape first.
-export const zReplyMarkup = z.union([
-  zInlineKeyboardMarkup,
-  zReplyKeyboardMarkup,
-  zForceReply,
-  zReplyKeyboardRemove,
-]);
+export const zReplyMarkup = z.union([zInlineKeyboardMarkup, zReplyKeyboardMarkup, zForceReply, zReplyKeyboardRemove]);

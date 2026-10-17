@@ -1,6 +1,6 @@
 // Update-delivery Bot API methods: getMe, getUpdates, setWebhook,
 // deleteWebhook, getWebhookInfo.
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
@@ -49,21 +49,14 @@ export async function getUpdates(
     );
   }
   const filtered =
-    allowedUpdates && allowedUpdates.length > 0
-      ? updates.filter((u) => allowedUpdates.includes(u.type))
-      : updates;
+    allowedUpdates && allowedUpdates.length > 0 ? updates.filter((u) => allowedUpdates.includes(u.type)) : updates;
   return c.json({
     ok: true,
     result: filtered.map((u) => u.payload),
   });
 }
 
-export function setWebhook(
-  c: Context,
-  bot: TelegramBot,
-  raw: unknown,
-  store: Store,
-) {
+export function setWebhook(c: Context, bot: TelegramBot, raw: unknown, store: Store) {
   const r = parseWithSchema(c, zSetWebhookBody, raw);
   if (!r.ok) return r.response;
   const body = r.data;
@@ -73,9 +66,12 @@ export function setWebhook(
     // Empty URL removes the webhook, matching real behaviour.
     return deleteWebhook(c, bot, store);
   }
-  // Real Telegram only allows HTTPS webhooks (and rejects localhost, though
-  // the emulator is lenient there for hermetic testing).
-  if (!/^https:\/\//i.test(url)) {
+  // Real Telegram requires HTTPS webhooks. The emulator keeps that check for
+  // non-loopback URLs so tests catch the real production validation, but
+  // allows plain HTTP on localhost/127.0.0.1/::1 so in-process test suites
+  // (e.g. grammy-emulate's webhook-mode mount) can run a receiver on a random
+  // free port without terminating TLS.
+  if (!/^https:\/\//i.test(url) && !isLoopbackUrl(url)) {
     return tgError(c, "Bad Request: bad webhook: HTTPS url must be provided for webhook", 400, 400);
   }
 
@@ -92,6 +88,15 @@ export function deleteWebhook(c: Context, bot: TelegramBot, store: Store) {
   const ts = getTelegramStore(store);
   ts.bots.update(bot.id, { webhook_url: null, webhook_secret: null, webhook_allowed_updates: null });
   return okRaw(c, true);
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1";
+  } catch {
+    return false;
+  }
 }
 
 export function getWebhookInfo(c: Context, bot: TelegramBot) {

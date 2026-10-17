@@ -1,7 +1,7 @@
 // Forum-topic Bot API methods: createForumTopic / editForumTopic /
 // closeForumTopic / reopenForumTopic / deleteForumTopic. All four
 // require a supergroup with is_forum=true.
-import type { Context } from "hono";
+import type { Context } from "@emulators/core";
 import type { Store } from "@emulators/core";
 import { getTelegramStore } from "../store.js";
 import { ok, okRaw, tgError } from "../http.js";
@@ -26,9 +26,7 @@ function requireForumChat(c: Context, chatId: number, store: Store) {
 
 function findForumTopic(store: Store, chatId: number, threadId: number): TelegramForumTopic | undefined {
   const ts = getTelegramStore(store);
-  return ts.forumTopics
-    .findBy("chat_id", chatId)
-    .find((t) => t.message_thread_id === threadId && !t.is_deleted);
+  return ts.forumTopics.findBy("chat_id", chatId).find((t) => t.message_thread_id === threadId && !t.is_deleted);
 }
 
 export function createForumTopicMethod(c: Context, raw: unknown, store: Store) {

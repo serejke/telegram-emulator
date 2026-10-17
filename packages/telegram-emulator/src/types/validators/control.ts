@@ -84,10 +84,9 @@ export const zSimulateUserPhotoInput = z
     photoBase64: z.string().optional(),
     photo: zMultipartFile.optional(),
   })
-  .refine(
-    (v) => v.photoBase64 !== undefined || v.photo !== undefined,
-    { message: "photoBase64 or multipart photo required" },
-  );
+  .refine((v) => v.photoBase64 !== undefined || v.photo !== undefined, {
+    message: "photoBase64 or multipart photo required",
+  });
 export type SimulateUserPhotoInput = z.infer<typeof zSimulateUserPhotoInput>;
 
 export const zSimulateCallbackInput = z.object({
@@ -146,15 +145,7 @@ export const zEditChannelPostInput = z.object({
 });
 export type EditChannelPostInput = z.infer<typeof zEditChannelPostInput>;
 
-export const zMediaKind = z.enum([
-  "photo",
-  "video",
-  "audio",
-  "voice",
-  "animation",
-  "sticker",
-  "document",
-]);
+export const zMediaKind = z.enum(["photo", "video", "audio", "voice", "animation", "sticker", "document"]);
 
 export const zSimulateUserMediaInput = z
   .object({
@@ -170,10 +161,7 @@ export const zSimulateUserMediaInput = z
     bytesBase64: z.string().optional(),
     file: zMultipartFile.optional(),
   })
-  .refine(
-    (v) => v.bytesBase64 !== undefined || v.file !== undefined,
-    { message: "bytesBase64 or file required" },
-  );
+  .refine((v) => v.bytesBase64 !== undefined || v.file !== undefined, { message: "bytesBase64 or file required" });
 export type SimulateUserMediaInput = z.infer<typeof zSimulateUserMediaInput>;
 
 export const zInjectFaultInput = z

@@ -225,7 +225,9 @@ describe("Telegram Bot API - commands and entities", () => {
     simulateUserMessage(tx.store, { chatId: dm.chat_id, userId: user.user_id, text: "/connect ABC" });
 
     const res = await postJson(tx.app, `/bot${bot.token}/getUpdates`, {});
-    const body = await json<{ result: Array<{ message: { entities: Array<{ type: string; offset: number; length: number }> } }> }>(res);
+    const body = await json<{
+      result: Array<{ message: { entities: Array<{ type: string; offset: number; length: number }> } }>;
+    }>(res);
     const entities = body.result[0].message.entities;
     expect(entities).toHaveLength(1);
     expect(entities[0].type).toBe("bot_command");
@@ -269,7 +271,11 @@ describe("Telegram Bot API - mentions in groups", () => {
     });
 
     simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "chatting to the group" });
-    simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "hi @trip_bot, what's the plan?" });
+    simulateUserMessage(tx.store, {
+      chatId: group.chat_id,
+      userId: user.user_id,
+      text: "hi @trip_bot, what's the plan?",
+    });
 
     const updates = await json<{ result: Array<{ message: { text: string } }> }>(
       await postJson(tx.app, `/bot${bot.token}/getUpdates`, {}),
@@ -305,9 +311,7 @@ describe("Telegram Bot API - mentions in groups", () => {
     simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "one" });
     simulateUserMessage(tx.store, { chatId: group.chat_id, userId: user.user_id, text: "two" });
 
-    const updates = await json<{ result: unknown[] }>(
-      await postJson(tx.app, `/bot${bot.token}/getUpdates`, {}),
-    );
+    const updates = await json<{ result: unknown[] }>(await postJson(tx.app, `/bot${bot.token}/getUpdates`, {}));
     expect(updates.result).toHaveLength(2);
   });
 });
@@ -340,7 +344,7 @@ describe("Telegram Bot API - photos and file_id round-trip", () => {
     expect(fileRes.result.file_path).toContain("photos/");
 
     // Bot downloads bytes
-    const dl = await tx.app.request(`http://localhost:4007/file/bot${bot.token}/${fileRes.result.file_path}`);
+    const dl = await tx.app.request(`http://localhost:4014/file/bot${bot.token}/${fileRes.result.file_path}`);
     expect(dl.status).toBe(200);
     const buf = Buffer.from(await dl.arrayBuffer());
     expect(buf.equals(Buffer.from(PNG_1X1))).toBe(true);

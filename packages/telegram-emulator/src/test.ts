@@ -1,15 +1,12 @@
 import { telegramPaths } from "./paths.js";
-import type {
-  WireMessageEntity,
-  WireReplyMarkup,
-} from "./types/wire/index.js";
+import type { WireMessageEntity, WireReplyMarkup } from "./types/wire/index.js";
 
 /**
  * Programmatic test client for the Telegram emulator.
  *
  * Create one with a running emulator URL:
  *
- *   const emu = await createEmulator({ service: "telegram", port: 4007 });
+ *   const emu = await createEmulator({ service: "telegram", port: 4014 });
  *   const tg = createTelegramTestClient(emu.url);
  *   const bot = await tg.createBot({ username: "trip_test_bot" });
  *   const user = await tg.createUser({ first_name: "Alice" });
@@ -119,12 +116,7 @@ export interface TelegramTestClient {
   addBotToChat(input: { chatId: number; botId: number; byUserId: number }): Promise<{ update_id: number }>;
   removeBotFromChat(input: { chatId: number; botId: number; byUserId: number }): Promise<{ update_id: number }>;
 
-  promoteChatMember(input: {
-    chatId: number;
-    userId?: number;
-    botId?: number;
-    demote?: boolean;
-  }): Promise<void>;
+  promoteChatMember(input: { chatId: number; userId?: number; botId?: number; demote?: boolean }): Promise<void>;
 
   reactToMessage(input: {
     chatId: number;
@@ -191,9 +183,10 @@ export interface TelegramTestClient {
     answer_cache_time?: number;
   } | null>;
 
-  getDraftHistory(input: { chatId: number; draftId: number }): Promise<
-    Array<{ seq: number; text: string; entities?: WireMessageEntity[]; bot_id: number }>
-  >;
+  getDraftHistory(input: {
+    chatId: number;
+    draftId: number;
+  }): Promise<Array<{ seq: number; text: string; entities?: WireMessageEntity[]; bot_id: number }>>;
 
   getSentMessages(input: { chatId: number }): Promise<TestMessage[]>;
   getAllMessages(input: { chatId: number }): Promise<TestMessage[]>;
@@ -255,8 +248,7 @@ export function createTelegramTestClient(
   // Local closures shadowing the top-level postJson/getJson names so the
   // existing call sites below still look like postJson(root, ...) without
   // needing to thread fetchImpl through each one.
-  const postJson = <T>(r: string, path: string, body: unknown) =>
-    postJsonOuter<T>(fetchImpl, r, path, body);
+  const postJson = <T>(r: string, path: string, body: unknown) => postJsonOuter<T>(fetchImpl, r, path, body);
   const getJson = <T>(r: string, path: string) => getJsonOuter<T>(fetchImpl, r, path);
 
   return {
@@ -328,29 +320,27 @@ export function createTelegramTestClient(
     },
 
     async editUserMessage(input) {
-      const r = await postJson<{ update_id: number }>(
-        root,
-        telegramPaths.chatEdits(input.chatId),
-        { messageId: input.messageId, userId: input.userId, text: input.text },
-      );
+      const r = await postJson<{ update_id: number }>(root, telegramPaths.chatEdits(input.chatId), {
+        messageId: input.messageId,
+        userId: input.userId,
+        text: input.text,
+      });
       return { update_id: r.update_id };
     },
 
     async addBotToChat(input) {
-      const r = await postJson<{ update_id: number }>(
-        root,
-        telegramPaths.chatAddBot(input.chatId),
-        { botId: input.botId, byUserId: input.byUserId },
-      );
+      const r = await postJson<{ update_id: number }>(root, telegramPaths.chatAddBot(input.chatId), {
+        botId: input.botId,
+        byUserId: input.byUserId,
+      });
       return { update_id: r.update_id };
     },
 
     async removeBotFromChat(input) {
-      const r = await postJson<{ update_id: number }>(
-        root,
-        telegramPaths.chatRemoveBot(input.chatId),
-        { botId: input.botId, byUserId: input.byUserId },
-      );
+      const r = await postJson<{ update_id: number }>(root, telegramPaths.chatRemoveBot(input.chatId), {
+        botId: input.botId,
+        byUserId: input.byUserId,
+      });
       return { update_id: r.update_id };
     },
 
@@ -363,11 +353,11 @@ export function createTelegramTestClient(
     },
 
     async reactToMessage(input) {
-      const r = await postJson<{ update_id: number }>(
-        root,
-        telegramPaths.chatReactions(input.chatId),
-        { messageId: input.messageId, userId: input.userId, reaction: input.reaction },
-      );
+      const r = await postJson<{ update_id: number }>(root, telegramPaths.chatReactions(input.chatId), {
+        messageId: input.messageId,
+        userId: input.userId,
+        reaction: input.reaction,
+      });
       return { update_id: r.update_id };
     },
 
@@ -447,13 +437,13 @@ export function createTelegramTestClient(
     },
 
     async clearFaults() {
-      const res = await fetch(`${root}${telegramPaths.faults()}`, { method: "DELETE" });
+      const res = await fetchImpl(`${root}${telegramPaths.faults()}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`DELETE ${telegramPaths.faults()} failed: ${res.status}`);
     },
 
     async getCallbackAnswer(input) {
       const path = telegramPaths.callbackById(encodeURIComponent(input.callbackQueryId));
-      const res = await fetch(`${root}${path}`);
+      const res = await fetchImpl(`${root}${path}`);
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
       return (await res.json()) as {

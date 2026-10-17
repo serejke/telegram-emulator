@@ -2,10 +2,7 @@ import type { UpdateType } from "../store/update.js";
 import type { WireMessage } from "./message.js";
 import type { WireCallbackQuery } from "./callback-query.js";
 import type { WireChatMemberUpdated } from "./chat-member-updated.js";
-import type {
-  WireMessageReactionCountUpdated,
-  WireMessageReactionUpdated,
-} from "./reaction-update.js";
+import type { WireMessageReactionCountUpdated, WireMessageReactionUpdated } from "./reaction-update.js";
 
 // Discriminated wrapper emitted over the wire as a Bot API `Update`.
 // Every variant carries `update_id` + exactly one named payload key
@@ -45,10 +42,6 @@ export type PayloadFor<T extends UpdateType> = T extends
 // construction across the discriminated union. Per TYPING_SPEC §5.3
 // this is the single sanctioned place for the cast — every caller
 // remains fully typed via the generic signature.
-export function wrapPayload<T extends UpdateType>(
-  update_id: number,
-  type: T,
-  payload: PayloadFor<T>,
-): WireUpdate {
+export function wrapPayload<T extends UpdateType>(update_id: number, type: T, payload: PayloadFor<T>): WireUpdate {
   return { update_id, [type]: payload } as unknown as WireUpdate;
 }

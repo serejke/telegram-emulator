@@ -16,7 +16,7 @@ The emulator runs through the main `emulate` CLI; the package is only needed dir
 npx emulate --service telegram
 ```
 
-Boots on `http://localhost:4007` with a default seeded bot (`@emulate_bot`), a test user, and a private chat.
+Boots on `http://localhost:4014` with a default seeded bot (`@emulate_bot`), a test user, and a private chat.
 
 ## Test client
 
@@ -26,7 +26,7 @@ For Vitest / Jest / Playwright:
 import { createEmulator } from "emulate";
 import { createTelegramTestClient } from "@emulators/telegram/test";
 
-const emu = await createEmulator({ service: "telegram", port: 4007 });
+const emu = await createEmulator({ service: "telegram", port: 4014 });
 const tg = createTelegramTestClient(emu.url);
 
 const bot = await tg.createBot({ username: "trip_test_bot", first_name: "Trip Test" });
@@ -57,7 +57,7 @@ Full chat-SDK parity surface:
 | Area       | Bot API methods                                                                                                                                                                                   |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity   | `getMe`                                                                                                                                                                                           |
-| Delivery   | `getUpdates` (with `allowed_updates` filter), `setWebhook` (HTTPS-only, with `secret_token` + `allowed_updates`), `deleteWebhook`, `getWebhookInfo`                                               |
+| Delivery   | `getUpdates` (with `allowed_updates` filter), `setWebhook` (HTTPS for public URLs, plain HTTP for loopback hosts; with `secret_token` + `allowed_updates`), `deleteWebhook`, `getWebhookInfo`     |
 | Messaging  | `sendMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendAudio`, `sendVoice`, `sendAnimation`, `sendSticker`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `sendChatAction` |
 | Formatting | `parse_mode = MarkdownV2` / `HTML` / `Markdown` (legacy v1) on text + caption surfaces, including `blockquote` / `expandable_blockquote`                                                          |
 | Streaming  | `sendMessageDraft` — emulator-only extension for testing animated streamed replies (no real Bot API method; appends snapshots under `(chat_id, draft_id, bot_id)`)                                |
@@ -78,7 +78,7 @@ Validation (matches real Telegram — rejects, does not trim):
 - Caption: > 1024 chars → `400 Bad Request: message caption is too long`
 - MarkdownV2 unescaped reserved char → `400 can't parse entities: character 'X' is reserved and must be escaped with the preceding '\'`
 - `message_thread_id` in non-supergroup → `400 Bad Request: message thread not found`
-- `setWebhook` with non-HTTPS URL → `400 Bad Request: bad webhook: HTTPS url must be provided for webhook`
+- `setWebhook` with non-HTTPS URL pointing at a non-loopback host → `400 Bad Request: bad webhook: HTTPS url must be provided for webhook`. Loopback hosts (`localhost`, `127.0.0.1`, `::1`) are allowed to use plain HTTP so hermetic test setups can run a receiver on a random free port without terminating TLS.
 - `sendMessage` with `reply_to_message_id` pointing at a missing message → `400 Bad Request: message to be replied not found`
 - Concurrent `getUpdates` for the same bot → `409 Conflict: terminated by other getUpdates request` (real-Telegram wording)
 
@@ -173,7 +173,7 @@ Matches real Telegram:
 
 ## Ports
 
-The CLI assigns the Telegram service to port `4007` by default (next after AWS at `4006`).
+The CLI assigns the Telegram service to port `4014` by default (next after Twilio at `4013`).
 
 ## Non-goals
 
