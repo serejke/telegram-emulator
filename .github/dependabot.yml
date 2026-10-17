@@ -1,0 +1,45 @@
+# Low-maintenance setup: one grouped PR per month for minor/patch updates,
+# majors one by one, all held back two weeks after release. Security updates
+# ignore the schedule and cooldown and open as soon as an advisory lands.
+version: 2
+updates:
+  - package-ecosystem: npm # covers the pnpm workspace via pnpm-lock.yaml
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 3
+    versioning-strategy: increase-if-necessary
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned exactly on purpose: the emulator is built on core's internal
+      # plugin API (ServicePlugin, Store, Collection, Hono re-export), and in
+      # 0.x every minor may break it. Upgrade by hand after running the suite.
+      # Note: ignore rules also suppress Dependabot *security* PRs for this
+      # package; Dependabot alerts still fire.
+      - dependency-name: "@emulators/core"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # @types/node tracks the oldest supported Node, not the newest.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 is the native (Go) compiler; adopting it is a deliberate
+      # migration (tsup's dts build depends on the TS 5 API).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]
