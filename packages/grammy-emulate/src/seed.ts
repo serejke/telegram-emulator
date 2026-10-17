@@ -1,4 +1,4 @@
-import type { TelegramTestClient, TestBot, TestUser, TestChat } from "@emulators/telegram/test";
+import type { TelegramTestClient, TestBot, TestUser, TestChat } from "@serejke/telegram-emulator/test";
 
 export interface SeedApi {
   bot(opts: BotSeed): Promise<TestBot>;

@@ -6,13 +6,6 @@ surface for seeding, simulation, inspection, and vitest assertions.
 
 No real bot token, no network, no second Telegram account.
 
-> **Status: pre-release.** The underlying Bot API emulator lives in
-> [`@emulators/telegram`](https://github.com/vercel-labs/emulate/tree/main/packages/%40emulators/telegram)
-> and is still awaiting review at [vercel-labs/emulate#75](https://github.com/vercel-labs/emulate/pull/75),
-> so it is not on npm yet. This package targets `@emulators/telegram ^0.9.0`
-> and is verified against that build; once the upstream PR lands, the install
-> below works end-to-end. Until then, the source here is the artifact.
-
 ## Install
 
 ```bash
@@ -72,8 +65,8 @@ real `getUpdates` / webhook semantics, entity parsing, Privacy Mode,
 inline-keyboard callback round-trips, media file IDs — everything the real
 Bot API has, served by an in-process HTTP server.
 
-Built on top of [`@emulators/telegram`](https://github.com/vercel-labs/emulate/tree/main/packages/%40emulators/telegram)
-from [vercel-labs/emulate](https://github.com/vercel-labs/emulate).
+Built on top of [`@serejke/telegram-emulator`](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator), a standalone Bot API emulator that lives in the same
+repository and runs on the HTTP core of [vercel-labs/emulate](https://github.com/vercel-labs/emulate).
 
 ## API
 
@@ -225,7 +218,7 @@ pnpm --filter echo-bot-example test
 
 ## What the emulator covers
 
-From [`@emulators/telegram`](https://github.com/vercel-labs/emulate/tree/main/packages/%40emulators/telegram):
+From [`@serejke/telegram-emulator`](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator):
 
 - **Delivery**: `getUpdates` + long-poll takeover 409, `setWebhook` with
   `secret_token` + 5xx retry, `deleteWebhook`, `getWebhookInfo`.
@@ -248,7 +241,7 @@ From [`@emulators/telegram`](https://github.com/vercel-labs/emulate/tree/main/pa
   retry testing.
 
 Not covered: payments, games, Business API, Passport, inline mode, media
-groups, polls. See the upstream [non-goals](https://github.com/vercel-labs/emulate/tree/main/packages/%40emulators/telegram#non-goals).
+groups, polls. See the emulator's [non-goals](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator#non-goals).
 
 ## License
 

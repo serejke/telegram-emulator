@@ -1,5 +1,5 @@
 import type { Bot } from "grammy";
-import type { TestBot } from "@emulators/telegram/test";
+import type { TestBot } from "@serejke/telegram-emulator/test";
 import type { MountContext, MountFactory, MountOptions, MountedBot } from "./types.js";
 import { mountPolling } from "./polling.js";
 import { mountWebhook } from "./webhook.js";

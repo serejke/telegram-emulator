@@ -1,4 +1,4 @@
-import type { TelegramTestClient, TestChat, TestUser } from "@emulators/telegram/test";
+import type { TelegramTestClient, TestChat, TestUser } from "@serejke/telegram-emulator/test";
 
 export interface SendMediaOptions {
   caption?: string;

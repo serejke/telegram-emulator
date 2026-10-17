@@ -1,6 +1,6 @@
 import type { Bot } from "grammy";
-import type { TestBot, TestChat, TestUser } from "@emulators/telegram/test";
-import { getDispatcher } from "@emulators/telegram";
+import type { TestBot, TestChat, TestUser } from "@serejke/telegram-emulator/test";
+import { getDispatcher } from "@serejke/telegram-emulator";
 import { startRuntime, type Runtime, type RuntimeOptions } from "./runtime.js";
 import { createSeed, type SeedApi } from "./seed.js";
 import { createSimulate, type SimulateUserApi } from "./simulate.js";
@@ -14,7 +14,7 @@ export type {
   TestChat,
   TestMessage,
   TelegramTestClient,
-} from "@emulators/telegram/test";
+} from "@serejke/telegram-emulator/test";
 
 export type { SeedApi } from "./seed.js";
 export type { SimulateUserApi, SimulateChatApi, SendMediaOptions, SendMediaResult } from "./simulate.js";

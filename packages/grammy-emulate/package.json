@@ -4,13 +4,14 @@
   "author": "Sergei Patrikeev <6849689+serejke@users.noreply.github.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/serejke/grammy-emulate.git"
+    "url": "git+https://github.com/serejke/grammy-emulate.git",
+    "directory": "packages/grammy-emulate"
   },
   "bugs": {
     "url": "https://github.com/serejke/grammy-emulate/issues"
   },
-  "homepage": "https://github.com/serejke/grammy-emulate",
-  "description": "End-to-end testing for grammY bots: fluent lifecycle, seeding, simulation, inspection, and vitest matchers on top of @emulators/telegram.",
+  "homepage": "https://github.com/serejke/grammy-emulate#readme",
+  "description": "End-to-end testing for grammY bots: fluent lifecycle, seeding, simulation, inspection, and vitest matchers on top of @serejke/telegram-emulator.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,8 +32,6 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
@@ -45,8 +44,8 @@
     }
   },
   "dependencies": {
-    "@emulators/core": "^0.9.0",
-    "@emulators/telegram": "^0.9.0"
+    "@emulators/core": "0.9.0",
+    "@serejke/telegram-emulator": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22",

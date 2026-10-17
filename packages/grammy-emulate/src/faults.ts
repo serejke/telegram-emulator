@@ -1,4 +1,4 @@
-import type { TelegramTestClient, TestBot } from "@emulators/telegram/test";
+import type { TelegramTestClient, TestBot } from "@serejke/telegram-emulator/test";
 
 /** Status codes the emulator's fault injection supports. */
 export type FaultCode = 400 | 401 | 403 | 404 | 429;

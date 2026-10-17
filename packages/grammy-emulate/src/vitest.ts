@@ -1,6 +1,6 @@
 import { expect, beforeAll, afterAll, afterEach } from "vitest";
 import type { Emulator } from "./index.js";
-import type { TestMessage } from "@emulators/telegram/test";
+import type { TestMessage } from "@serejke/telegram-emulator/test";
 
 export interface EmuVitestOptions {
   /** Reset the emulator store between each test. Defaults to true. */

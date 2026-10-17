@@ -1,4 +1,4 @@
-import type { TelegramTestClient, TestChat, TestMessage } from "@emulators/telegram/test";
+import type { TelegramTestClient, TestChat, TestMessage } from "@serejke/telegram-emulator/test";
 
 export interface InspectChatApi {
   messages(): Promise<TestMessage[]>;

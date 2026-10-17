@@ -3,7 +3,7 @@ import { createServer as createNetServer } from "node:net";
 import type { Bot } from "grammy";
 import { webhookCallback } from "grammy";
 import { serve } from "@emulators/core";
-import type { TestBot } from "@emulators/telegram/test";
+import type { TestBot } from "@serejke/telegram-emulator/test";
 import type { MountContext, MountFactory, MountOptions, MountedBot } from "./types.js";
 
 /**
@@ -13,9 +13,6 @@ import type { MountContext, MountFactory, MountOptions, MountedBot } from "./typ
  * every Update to the receiver. grammy's `webhookCallback` verifies the
  * secret-token header on each delivery, so authentication is exercised
  * end-to-end exactly as in production.
- *
- * Requires `@emulators/telegram >= 0.9.0` (which accepts plain-HTTP loopback
- * URLs for setWebhook).
  */
 export async function mountWebhook<B extends Bot>(
   ctx: MountContext,
