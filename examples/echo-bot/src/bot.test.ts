@@ -85,7 +85,7 @@ describe("echo bot — end-to-end via the emulator", () => {
     });
 
     const answer = await emu.inspect.callbackAnswer(click.callback_query_id);
-    expect(answer).toHaveAnsweredCallback();
+    await expect(answer).toHaveAnsweredCallback();
     expect(answer?.answer_text).toBe("closed");
   });
 
@@ -114,7 +114,7 @@ describe("echo bot — end-to-end via the emulator", () => {
     await emu.as(alice).in(group).send("hello everyone");
     // Give the bot a chance; there should be no reply.
     await new Promise((r) => setTimeout(r, 200));
-    expect(emu.in(group)).toHaveReplyCount(0);
+    await expect(emu.in(group)).toHaveReplyCount(0);
 
     // Addressed /echo still works in groups (dispatched past Privacy Mode).
     await emu.as(alice).in(group).send("/echo@echo_e2e_bot hi from group");
