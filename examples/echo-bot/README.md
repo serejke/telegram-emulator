@@ -1,39 +1,52 @@
 # echo-bot example
 
-A small production-shaped grammY bot used as the showcase for `grammy-emulate`.
+A small grammY bot tested end to end with `grammy-emulate`.
 
 ## The bot
 
-`src/bot.ts` — four commands (`/start`, `/echo`, `/menu`, `/connect`), an inline
-keyboard with three callback actions (`menu:about`, `menu:help`, `menu:close`),
-and a plain-text handler.
+[`src/bot.ts`](src/bot.ts) exports `buildEchoBot(token, apiRoot)`:
+
+- Commands: `/start`, `/echo <text>`, `/menu`, `/connect <code>`.
+- `/menu` shows an inline keyboard. `menu:about` and `menu:help` edit the message; `menu:close` answers the callback and deletes it.
+- Any other text gets `You said: <text>`.
 
 ## The tests
 
-- **`src/bot.test.ts`** — 8 end-to-end tests driven through the emulator.
-  Every test boots the real grammY bot (long-polling against an in-process
-  Bot API emulator), simulates user actions, and asserts on bot replies.
-
-- **`src/bot.before.test.ts`** — the same `/echo hello` test written the
-  "before" way: transformer mocks + hand-crafted `Update` objects. Kept for
-  comparison — look at how much you have to fake by hand.
+| File                                           | Tests | What it covers                                                                                        |
+| ---------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------- |
+| [`bot.test.ts`](src/bot.test.ts)               | 8     | Commands, inline keyboard edits and deletes, callback answers, Privacy Mode in a group. Long polling. |
+| [`webhook.test.ts`](src/webhook.test.ts)       | 3     | The same flows in webhook mode, and `allowedUpdates` filtering.                                       |
+| [`media.test.ts`](src/media.test.ts)           | 6     | Video, audio, voice, animation, sticker, and document; the bot sees the same `file_id`.               |
+| [`faults.test.ts`](src/faults.test.ts)         | 4     | Injected 429 and 403 errors reaching `bot.catch`; `count`; `faults.during` cleanup on throw.          |
+| [`bot.before.test.ts`](src/bot.before.test.ts) | 1     | `/echo hello` with transformer mocks and a hand-written `Update`, for comparison.                     |
 
 ## Run
 
+From the repository root:
+
 ```bash
-pnpm test
+pnpm install
+pnpm build
+pnpm --filter echo-bot-example test
 ```
 
-## Before / after at a glance
+## Before and after
 
-### Before — transformer mocks
+Before, with mocks:
 
 ```ts
-bot.api.config.use((_prev, method, payload) => {
-  if (method === "sendMessage") {
-    return { ok: true, result: { message_id: 1 /* invent it */ } };
-  }
-  return { ok: true, result: true };
+const sent: Array<{ method: string; payload: unknown }> = [];
+bot.api.config.use(async (_prev, method, payload) => {
+  sent.push({ method, payload });
+  // Invent a response shaped well enough that grammY accepts it.
+  return {
+    ok: true,
+    result: {
+      message_id: sent.length,
+      date: 0,
+      chat: { id: 111, type: "private" },
+    } as any,
+  };
 });
 
 await bot.handleUpdate({
@@ -48,26 +61,30 @@ await bot.handleUpdate({
   },
 });
 
-expect(sent[0]?.payload.text).toBe("hello");
+expect(sent[0]).toMatchObject({
+  method: "sendMessage",
+  payload: { text: "hello" },
+});
 ```
 
-You invent `message_id`s. You invent chat shapes. You invent entity offsets.
-You never exercise the wire format. Multi-turn flows — edits, callbacks,
-follow-up messages — multiply the mocking surface.
+The full version, including the hand-written `botInfo`, is in [`bot.before.test.ts`](src/bot.before.test.ts).
 
-### After — `grammy-emulate`
+You invent ids, chat shapes, and entity offsets.
+The wire format and the polling loop never run.
+Each extra step (a click, an edit, a follow-up message) needs more fakes.
+
+After, with `grammy-emulate`:
 
 ```ts
 const bot = await emu.seed.bot({ username: "echo_bot" });
 const alice = await emu.seed.user({ first_name: "Alice" });
 const dm = await emu.seed.privateChat(bot, alice);
-const mounted = await emu.mount(bot, buildEchoBot);
+await emu.mount(bot, buildEchoBot);
 
 await emu.as(alice).in(dm).send("/echo hello");
 const reply = await emu.in(dm).waitForReply();
 expect(reply).toMatchReply("hello");
 ```
 
-grammY talks to a real Bot API over HTTP, the emulator allocates real
-`message_id`s, parses real entities, enforces Privacy Mode, and you can
-continue the flow (click, edit, react, delete) as a user would.
+grammY polls a real HTTP Bot API.
+The emulator allocates ids, parses entities, and applies Privacy Mode, and the test can continue the flow as a user would.
