@@ -3,4 +3,9 @@ packages:
   - "examples/*"
 
 allowBuilds:
-  "esbuild@0.27.7": false
+  "esbuild@0.28.2": false
+
+# GHSA-g7r4-m6w7-qqqr: tsup 8.x pins esbuild ^0.27 (vulnerable <0.28.1).
+# Dev-only (build + vitest); drop once tsup >=9 is adopted.
+overrides:
+  esbuild: "^0.28.2"
