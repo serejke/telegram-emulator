@@ -325,7 +325,7 @@ Seed the bot with `can_read_all_group_messages: true` to receive everything.
 await emu.mount(bot, factory, { mode: "webhook", allowedUpdates: ["message"] });
 ```
 
-`mount` starts an HTTP server on a free local port, wraps the bot in grammY's `webhookCallback` with a random secret token, and registers it with `setWebhook`.
+`mount` starts an HTTP server on a free port bound to loopback, wraps the bot in grammY's `webhookCallback` with a random secret token, and registers it with `setWebhook`.
 The emulator posts each Update to that server with the `X-Telegram-Bot-Api-Secret-Token` header, and retries on 5xx.
 Tests look the same as in polling mode.
 

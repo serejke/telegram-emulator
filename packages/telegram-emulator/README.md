@@ -21,7 +21,7 @@ For grammY bots, [`grammy-emulate`](https://github.com/serejke/telegram-emulator
 npm install --save-dev @serejke/telegram-emulator
 ```
 
-Node.js 20 or later.
+Tested on Node.js 22 and 24.
 
 ## Quick start
 
@@ -227,10 +227,14 @@ emu.store; // the underlying Store, for in-process access
 await emu.close();
 ```
 
-| Option | Default | Meaning                                                   |
-| ------ | ------- | --------------------------------------------------------- |
-| `port` | `4014`  | Port to listen on.                                        |
-| `seed` | –       | Fixtures added on top of the default bot, user, and chat. |
+| Option     | Default     | Meaning                                                                                                                                      |
+| ---------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`     | `4014`      | Port to listen on.                                                                                                                           |
+| `hostname` | `127.0.0.1` | Interface to bind. The default accepts only local connections. Pass `"0.0.0.0"` to listen on all interfaces, for example inside a container. |
+| `seed`     | –           | Fixtures added on top of the default bot, user, and chat.                                                                                    |
+
+The emulator has no authentication beyond bot tokens, and the control plane has none at all.
+Bind to a non-loopback interface only on a network you trust.
 
 Seed config:
 
@@ -279,8 +283,9 @@ Other exports, for in-process use:
 ### CLI
 
 ```text
-telegram-emulator [--port <n>]     # -p, default 4014
-telegram-emulator --help           # -h
+telegram-emulator [--port <n>] [--host <addr>]   # -p, default 4014; --host default 127.0.0.1
+telegram-emulator --host 0.0.0.0                 # listen on all interfaces
+telegram-emulator --help                         # -h
 ```
 
 It prints the URL and the default bot token, and stops on SIGINT or SIGTERM.
