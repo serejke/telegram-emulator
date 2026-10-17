@@ -1,9 +1,17 @@
+import { once } from "node:events";
 import { createServer, serve, type Store } from "@emulators/core";
 import { telegramPlugin, seedFromConfig, type TelegramSeedConfig } from "./index.js";
 
 export interface StartOptions {
   /** Port to listen on. Defaults to 4014. */
   port?: number;
+  /**
+   * Listening address. Defaults to IPv4 loopback (`127.0.0.1`), so the
+   * emulator — which accepts any seeded bot token and exposes control
+   * routes — is unreachable from other hosts. Pass `"0.0.0.0"` to expose it
+   * on all interfaces (e.g. from inside a container).
+   */
+  hostname?: string;
   /** Fixtures applied on top of the default bot/user/chat. */
   seed?: TelegramSeedConfig;
 }
@@ -16,6 +24,7 @@ export interface TelegramEmulator {
 }
 
 export const DEFAULT_PORT = 4014;
+export const DEFAULT_HOSTNAME = "127.0.0.1";
 
 /** Boot the Telegram Bot API emulator on `http://localhost:<port>`. */
 export async function startTelegramEmulator(opts: StartOptions = {}): Promise<TelegramEmulator> {
@@ -26,7 +35,10 @@ export async function startTelegramEmulator(opts: StartOptions = {}): Promise<Te
   telegramPlugin.seed?.(store, url);
   if (opts.seed) seedFromConfig(store, url, opts.seed);
 
-  const server = serve({ fetch: app.fetch, port });
+  const server = serve({ fetch: app.fetch, port, hostname: opts.hostname ?? DEFAULT_HOSTNAME });
+  // Resolve only once bound; a bind failure (e.g. EADDRINUSE) rejects here
+  // instead of surfacing as an unhandled 'error' event.
+  await once(server, "listening");
 
   return {
     url,

@@ -28,7 +28,9 @@ export async function mountWebhook<B extends Bot>(
   const receiverUrl = `http://localhost:${port}/`;
 
   const handler = webhookCallback(b, "std/http", { secretToken });
-  const server = serve({ fetch: (req) => handler(req), port });
+  // Loopback only: the receiver runs the bot's handlers, and only the
+  // in-process emulator needs to reach it.
+  const server = serve({ fetch: (req) => handler(req), port, hostname: "127.0.0.1" });
 
   try {
     await b.api.setWebhook(receiverUrl, {
@@ -59,7 +61,7 @@ async function pickFreePort(): Promise<number> {
     const srv = createNetServer();
     srv.unref();
     srv.once("error", reject);
-    srv.listen(0, () => {
+    srv.listen(0, "127.0.0.1", () => {
       const addr = srv.address();
       if (addr && typeof addr === "object") {
         const port = addr.port;
