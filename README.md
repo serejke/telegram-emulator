@@ -1,4 +1,4 @@
-# grammy-emulate
+# telegram-emulator
 
 End-to-end testing for Telegram bots against an in-process Telegram Bot API emulator.
 No real bot token, no network, no second Telegram account.

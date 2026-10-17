@@ -2,7 +2,7 @@
 
 Stateful emulator of the Telegram Bot API. Point any Telegram bot at it instead of `https://api.telegram.org` and test it end to end: no real bot, no Telegram client, no network.
 
-Runs on the HTTP core of [vercel-labs/emulate](https://github.com/vercel-labs/emulate) (`@emulators/core`). For grammY bots, [`grammy-emulate`](https://github.com/serejke/grammy-emulate) wraps it in a fluent test API.
+Runs on the HTTP core of [vercel-labs/emulate](https://github.com/vercel-labs/emulate) (`@emulators/core`). For grammY bots, [`grammy-emulate`](https://github.com/serejke/telegram-emulator/tree/main/packages/grammy-emulate) wraps it in a fluent test API.
 
 ## Install
 

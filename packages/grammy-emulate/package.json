@@ -4,13 +4,13 @@
   "author": "Sergei Patrikeev <6849689+serejke@users.noreply.github.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/serejke/grammy-emulate.git",
+    "url": "git+https://github.com/serejke/telegram-emulator.git",
     "directory": "packages/grammy-emulate"
   },
   "bugs": {
-    "url": "https://github.com/serejke/grammy-emulate/issues"
+    "url": "https://github.com/serejke/telegram-emulator/issues"
   },
-  "homepage": "https://github.com/serejke/grammy-emulate#readme",
+  "homepage": "https://github.com/serejke/telegram-emulator/tree/main/packages/grammy-emulate#readme",
   "description": "End-to-end testing for grammY bots: fluent lifecycle, seeding, simulation, inspection, and vitest matchers on top of @serejke/telegram-emulator.",
   "license": "MIT",
   "type": "module",

@@ -65,7 +65,7 @@ real `getUpdates` / webhook semantics, entity parsing, Privacy Mode,
 inline-keyboard callback round-trips, media file IDs — everything the real
 Bot API has, served by an in-process HTTP server.
 
-Built on top of [`@serejke/telegram-emulator`](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator), a standalone Bot API emulator that lives in the same
+Built on top of [`@serejke/telegram-emulator`](https://github.com/serejke/telegram-emulator/tree/main/packages/telegram-emulator), a standalone Bot API emulator that lives in the same
 repository and runs on the HTTP core of [vercel-labs/emulate](https://github.com/vercel-labs/emulate).
 
 ## API
@@ -218,7 +218,7 @@ pnpm --filter echo-bot-example test
 
 ## What the emulator covers
 
-From [`@serejke/telegram-emulator`](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator):
+From [`@serejke/telegram-emulator`](https://github.com/serejke/telegram-emulator/tree/main/packages/telegram-emulator):
 
 - **Delivery**: `getUpdates` + long-poll takeover 409, `setWebhook` with
   `secret_token` + 5xx retry, `deleteWebhook`, `getWebhookInfo`.
@@ -241,7 +241,7 @@ From [`@serejke/telegram-emulator`](https://github.com/serejke/grammy-emulate/tr
   retry testing.
 
 Not covered: payments, games, Business API, Passport, inline mode, media
-groups, polls. See the emulator's [non-goals](https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator#non-goals).
+groups, polls. See the emulator's [non-goals](https://github.com/serejke/telegram-emulator/tree/main/packages/telegram-emulator#non-goals).
 
 ## License
 

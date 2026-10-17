@@ -22,12 +22,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/serejke/grammy-emulate.git",
+    "url": "git+https://github.com/serejke/telegram-emulator.git",
     "directory": "packages/telegram-emulator"
   },
-  "homepage": "https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator",
+  "homepage": "https://github.com/serejke/telegram-emulator/tree/main/packages/telegram-emulator",
   "bugs": {
-    "url": "https://github.com/serejke/grammy-emulate/issues"
+    "url": "https://github.com/serejke/telegram-emulator/issues"
   },
   "publishConfig": {
     "access": "public"
