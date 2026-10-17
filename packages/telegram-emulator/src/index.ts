@@ -146,3 +146,4 @@ export const telegramPlugin: ServicePlugin = {
 };
 
 export default telegramPlugin;
+export { startTelegramEmulator, DEFAULT_PORT, type StartOptions, type TelegramEmulator } from "./server.js";

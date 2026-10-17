@@ -1,32 +1,32 @@
-# @emulators/telegram
+# @serejke/telegram-emulator
 
-Telegram Bot API emulator for `emulate`. Stateful, production-fidelity emulation of the Bot API so you can end-to-end test Telegram bots without creating a real bot, without clicking through Telegram clients, and without network.
+Stateful emulator of the Telegram Bot API. Point any Telegram bot at it instead of `https://api.telegram.org` and test it end to end: no real bot, no Telegram client, no network.
+
+Runs on the HTTP core of [vercel-labs/emulate](https://github.com/vercel-labs/emulate) (`@emulators/core`). For grammY bots, [`grammy-emulate`](https://github.com/serejke/grammy-emulate) wraps it in a fluent test API.
 
 ## Install
 
 ```bash
-npm install --save-dev @emulators/telegram
+npm install --save-dev @serejke/telegram-emulator
 ```
-
-The emulator runs through the main `emulate` CLI; the package is only needed directly if you want the typed test client in your own tests.
 
 ## Quick start
 
 ```bash
-npx emulate --service telegram
+npx @serejke/telegram-emulator --port 4014
 ```
 
-Boots on `http://localhost:4014` with a default seeded bot (`@emulate_bot`), a test user, and a private chat.
+Boots on `http://localhost:4014` with a default seeded bot (`@emulate_bot`, token `100001:EMULATE_DEFAULT_TOKEN`), a test user, and a private chat. Open the URL in a browser for the inspector.
 
 ## Test client
 
 For Vitest / Jest / Playwright:
 
 ```typescript
-import { createEmulator } from "emulate";
-import { createTelegramTestClient } from "@emulators/telegram/test";
+import { startTelegramEmulator } from "@serejke/telegram-emulator";
+import { createTelegramTestClient } from "@serejke/telegram-emulator/test";
 
-const emu = await createEmulator({ service: "telegram", port: 4014 });
+const emu = await startTelegramEmulator({ port: 4014 });
 const tg = createTelegramTestClient(emu.url);
 
 const bot = await tg.createBot({ username: "trip_test_bot", first_name: "Trip Test" });
@@ -138,29 +138,28 @@ All programmatic methods have matching HTTP routes under `/_emu/telegram/*` for 
 
 ## Seed configuration
 
-```yaml
-telegram:
-  bots:
-    - username: trip_bot
-      first_name: Trip Bot
-      token: "100001:SEEDED_TOKEN_TRIP_BOT"
-      can_join_groups: true
-      commands:
-        - command: connect
-          description: Connect this chat to a trip
-  users:
-    - first_name: Alice
-      username: alice_tester
-  chats:
-    - type: private
-      between: [trip_bot, alice_tester]
-    - type: group
-      title: Morocco Planning
-      members: [alice_tester]
-      bots: [trip_bot]
+```typescript
+await startTelegramEmulator({
+  seed: {
+    bots: [
+      {
+        username: "trip_bot",
+        first_name: "Trip Bot",
+        token: "100001:SEEDED_TOKEN_TRIP_BOT",
+        can_join_groups: true,
+        commands: [{ command: "connect", description: "Connect this chat to a trip" }],
+      },
+    ],
+    users: [{ first_name: "Alice", username: "alice_tester" }],
+    chats: [
+      { type: "private", between: ["trip_bot", "alice_tester"] },
+      { type: "group", title: "Morocco Planning", members: ["alice_tester"], bots: ["trip_bot"] },
+    ],
+  },
+});
 ```
 
-The YAML `chats[].type` currently supports `private` and `group`. Supergroups, channels, and forum topics are created at runtime via the control plane (`createSupergroup` / `createChannel` / `createForumTopic`).
+`chats[].type` currently supports `private` and `group`. Supergroups, channels, and forum topics are created at runtime via the control plane (`createSupergroup` / `createChannel` / `createForumTopic`).
 
 ## Telegram privacy rules (groups)
 
@@ -170,10 +169,6 @@ Matches real Telegram:
 - Bare `/command` with no `@bot_username` is **dropped** in privacy mode.
 - Plain chatter between humans is **not** delivered.
 - To receive every message, set `can_read_all_group_messages: true` when creating the bot (equivalent to disabling Privacy Mode in real Telegram).
-
-## Ports
-
-The CLI assigns the Telegram service to port `4014` by default (next after Twilio at `4013`).
 
 ## Non-goals
 
@@ -186,7 +181,7 @@ This emulator deliberately does **not** implement:
 - TON wallet integrations
 - Real BotFather account management
 
-These are out of scope for the plugin's test-focused use case.
+These are out of scope for a test-focused emulator.
 
 ## Not implemented yet
 
@@ -201,5 +196,9 @@ Lands when a concrete flow demands it:
 ## Links
 
 - [Telegram Bot API reference](https://core.telegram.org/bots/api)
-- [`emulate` monorepo](https://github.com/vercel-labs/emulate)
+- [vercel-labs/emulate](https://github.com/vercel-labs/emulate) — the emulator framework this package runs on
 - [grammY](https://grammy.dev) · [Telegraf](https://telegraf.js.org) — SDKs this emulator is wire-compatible with
+
+## License
+
+Apache-2.0.

@@ -4,4 +4,4 @@ dist/
 *.log
 .DS_Store
 coverage/
-.npmrc
+.npmrc*

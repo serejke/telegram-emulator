@@ -6,7 +6,7 @@ import type { WireMessageEntity, WireReplyMarkup } from "./types/wire/index.js";
  *
  * Create one with a running emulator URL:
  *
- *   const emu = await createEmulator({ service: "telegram", port: 4014 });
+ *   const emu = await startTelegramEmulator({ port: 4014 });
  *   const tg = createTelegramTestClient(emu.url);
  *   const bot = await tg.createBot({ username: "trip_test_bot" });
  *   const user = await tg.createUser({ first_name: "Alice" });

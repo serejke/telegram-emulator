@@ -1,3 +1,6 @@
 packages:
   - "packages/*"
   - "examples/*"
+
+allowBuilds:
+  "esbuild@0.27.7": false

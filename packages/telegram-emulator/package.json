@@ -1,28 +1,33 @@
 {
-  "name": "@emulators/telegram",
-  "version": "0.9.0",
+  "name": "@serejke/telegram-emulator",
+  "version": "0.1.0",
+  "description": "Stateful in-process emulator of the Telegram Bot API for end-to-end testing Telegram bots without the network.",
   "license": "Apache-2.0",
+  "author": "Sergei Patrikeev <6849689+serejke@users.noreply.github.com>",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./test": {
-      "import": "./dist/test.js",
-      "types": "./dist/test.d.ts"
+      "types": "./dist/test.d.ts",
+      "import": "./dist/test.js"
     }
   },
-  "homepage": "https://emulate.dev",
+  "bin": {
+    "telegram-emulator": "./dist/cli.js"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/vercel-labs/emulate.git",
-    "directory": "packages/@emulators/telegram"
+    "url": "git+https://github.com/serejke/grammy-emulate.git",
+    "directory": "packages/telegram-emulator"
   },
+  "homepage": "https://github.com/serejke/grammy-emulate/tree/main/packages/telegram-emulator",
   "bugs": {
-    "url": "https://github.com/vercel-labs/emulate/issues"
+    "url": "https://github.com/serejke/grammy-emulate/issues"
   },
   "publishConfig": {
     "access": "public"
@@ -30,21 +35,30 @@
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "build": "tsup --clean",
-    "dev": "tsup --watch",
+    "build": "tsup",
     "test": "vitest run",
-    "clean": "rm -rf dist .turbo",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint src"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@emulators/core": "workspace:*",
+    "@emulators/core": "0.9.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "tsup": "^8",
-    "typescript": "^5.7",
+    "@types/node": "^22",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.0",
     "vitest": "^4.1.0"
-  }
+  },
+  "keywords": [
+    "telegram",
+    "bot-api",
+    "emulator",
+    "testing",
+    "e2e",
+    "mock"
+  ]
 }
