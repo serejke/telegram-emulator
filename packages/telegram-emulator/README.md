@@ -468,11 +468,11 @@ Faults also apply to `getUpdates`, so a `"*"` fault can stall a polling bot.
 - **Retention.** Per bot, the queue keeps at most 1000 pending and 200 delivered Updates. Files (2000), callback queries (500), draft snapshots (2000), and faults (500) drop the oldest entries past their cap.
 - **Memory only.** Nothing is persisted. `close()` discards everything.
 
-## Not implemented
+## Non-goals
 
 Out of scope for a test emulator: payments, games, the Business API, Telegram Passport, TON, and BotFather account management.
 
-Not built yet:
+## Not implemented yet
 
 - Inline mode (`inline_query`, `answerInlineQuery`).
 - `forwardMessage`, `copyMessage`, `sendMediaGroup`, `pinChatMessage`, polls, stories, web apps.
