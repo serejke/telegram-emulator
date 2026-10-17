@@ -26,16 +26,24 @@ export interface TelegramEmulator {
 export const DEFAULT_PORT = 4014;
 export const DEFAULT_HOSTNAME = "127.0.0.1";
 
-/** Boot the Telegram Bot API emulator on `http://localhost:<port>`. */
+/** Host to put in the advertised URL so it reaches the bound address. */
+function urlHost(hostname: string): string {
+  if (hostname === "0.0.0.0") return "127.0.0.1";
+  if (hostname === "::") return "[::1]";
+  return hostname.includes(":") ? `[${hostname}]` : hostname;
+}
+
+/** Boot the Telegram Bot API emulator on `http://127.0.0.1:<port>` (by default). */
 export async function startTelegramEmulator(opts: StartOptions = {}): Promise<TelegramEmulator> {
   const port = opts.port ?? DEFAULT_PORT;
-  const url = `http://localhost:${port}`;
+  const hostname = opts.hostname ?? DEFAULT_HOSTNAME;
+  const url = `http://${urlHost(hostname)}:${port}`;
 
   const { app, store } = createServer(telegramPlugin, { port, baseUrl: url, tokens: {} });
   telegramPlugin.seed?.(store, url);
   if (opts.seed) seedFromConfig(store, url, opts.seed);
 
-  const server = serve({ fetch: app.fetch, port, hostname: opts.hostname ?? DEFAULT_HOSTNAME });
+  const server = serve({ fetch: app.fetch, port, hostname });
   // Resolve only once bound; a bind failure (e.g. EADDRINUSE) rejects here
   // instead of surfacing as an unhandled 'error' event.
   await once(server, "listening");

@@ -66,7 +66,7 @@ Any other library or language: start the server and set your bot's API root to i
 
 ```bash
 npx @serejke/telegram-emulator --port 4014
-# default bot token: 100001:EMULATE_DEFAULT_TOKEN, inspector at http://localhost:4014/
+# default bot token: 100001:EMULATE_DEFAULT_TOKEN, inspector at http://127.0.0.1:4014/
 ```
 
 ## What works

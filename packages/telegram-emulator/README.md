@@ -31,7 +31,7 @@ As a standalone server:
 npx @serejke/telegram-emulator --port 4014
 ```
 
-It starts on `http://localhost:4014` with one bot (`@emulate_bot`, token `100001:EMULATE_DEFAULT_TOKEN`), one user (`@tester`), and a private chat between them.
+It starts on `http://127.0.0.1:4014` with one bot (`@emulate_bot`, token `100001:EMULATE_DEFAULT_TOKEN`), one user (`@tester`), and a private chat between them.
 Open the URL in a browser to see the inspector.
 
 From a test:
@@ -221,7 +221,7 @@ const emu = await startTelegramEmulator({
     /* ... */
   },
 });
-emu.url; // "http://localhost:4014"
+emu.url; // "http://127.0.0.1:4014"
 emu.port; // 4014
 emu.store; // the underlying Store, for in-process access
 await emu.close();
@@ -230,7 +230,7 @@ await emu.close();
 | Option     | Default     | Meaning                                                                                                                                      |
 | ---------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `port`     | `4014`      | Port to listen on.                                                                                                                           |
-| `hostname` | `127.0.0.1` | Interface to bind. The default accepts only local connections. Pass `"0.0.0.0"` to listen on all interfaces, for example inside a container. |
+| `hostname` | `127.0.0.1` | Interface to bind. The default accepts only local connections. Pass `"0.0.0.0"` to listen on all interfaces, for example inside a container. `url` then advertises `127.0.0.1`. |
 | `seed`     | –           | Fixtures added on top of the default bot, user, and chat.                                                                                    |
 
 The emulator has no authentication beyond bot tokens, and the control plane has none at all.

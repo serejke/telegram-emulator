@@ -25,7 +25,7 @@ export async function mountWebhook<B extends Bot>(
 
   const secretToken = randomUUID().replace(/-/g, "");
   const port = await pickFreePort();
-  const receiverUrl = `http://localhost:${port}/`;
+  const receiverUrl = `http://127.0.0.1:${port}/`;
 
   const handler = webhookCallback(b, "std/http", { secretToken });
   // Loopback only: the receiver runs the bot's handlers, and only the

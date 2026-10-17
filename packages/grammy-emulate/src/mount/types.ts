@@ -26,7 +26,7 @@ export interface MountedBot<B extends Bot> {
 }
 
 export interface MountContext {
-  /** The emulator's base URL, e.g. `http://localhost:4007`. */
+  /** The emulator's base URL, e.g. `http://127.0.0.1:4100`. */
   url: string;
 }
 
